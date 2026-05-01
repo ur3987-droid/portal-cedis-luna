@@ -2035,20 +2035,11 @@ function histRender(){
       var rol = sesionActual ? sesionActual.rol : '';
     var esAdmin = rol === 'admin' || rol === 'cedis';
     var esMiSucursal = sesionActual && inv.sucursal === sesionActual.sucursal;
-    var tienePDF = inv.pdfData || inv.pdfUrl;
+    // Always show PDF button — handler fetches from Drive if needed
+    var btnPdfStyle = 'background:var(--blue);color:#fff;padding:5px 10px;border-radius:6px;border:none;font-size:11px;font-weight:600;cursor:pointer;';
     h+='<div style="display:flex;gap:6px;align-items:center;">';
-    if(esAdmin && tienePDF){
-      // Admin y CEDIS ven todos los PDFs
-      if(inv.pdfData){
-        h+='<button data-folio="'+inv.folio+'" onclick="histVerPDFBtn(this)" style="background:var(--blue);color:#fff;padding:5px 10px;border-radius:6px;border:none;font-size:11px;font-weight:600;cursor:pointer;">Ver PDF</button>';
-      } else {
-        h+='<a href="'+inv.pdfUrl+'" target="_blank" style="background:var(--blue);color:#fff;padding:5px 10px;border-radius:6px;text-decoration:none;font-size:11px;font-weight:600;">Ver PDF</a>';
-      }
-    } else if(!esAdmin && esMiSucursal && inv.pdfData){
-      // Sucursal solo ve su propio PDF si está en memoria local
-      h+='<button data-folio="'+inv.folio+'" onclick="histVerPDFBtn(this)" style="background:var(--blue);color:#fff;padding:5px 10px;border-radius:6px;border:none;font-size:11px;font-weight:600;cursor:pointer;">Ver PDF</button>';
-    } else if(!esAdmin){
-      h+='<span style="font-size:11px;color:var(--grey-txt);">No disponible</span>';
+    if(esAdmin || esMiSucursal){
+      h+='<button data-folio="'+inv.folio+'" data-suc="'+(inv.sucursal||'')+'" onclick="histVerPDFBtn(this)" style="'+btnPdfStyle+'">&#128196; PDF</button>';
     } else {
       h+='<span style="font-size:11px;color:var(--grey-txt);">—</span>';
     }
@@ -2057,7 +2048,7 @@ function histRender(){
     }
     h+='</div>';
     } else if(inv.pdfUrl){
-      h+='<div><a href="'+inv.pdfUrl+'" target="_blank" style="background:var(--blue);color:#fff;padding:5px 10px;border-radius:6px;text-decoration:none;font-size:11px;font-weight:600;">Ver PDF</a></div>';
+      h+='<div><a href="'+inv.pdfUrl+'" target="_blank" style="background:var(--blue);color:#fff;padding:5px 10px;border-radius:6px;text-decoration:none;font-size:11px;font-weight:600;">&#128196; PDF</a></div>';
     } else {
       h+='<div style="font-size:11px;color:var(--grey-txt);">—</div>';
     }

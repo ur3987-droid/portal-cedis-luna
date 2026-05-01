@@ -1551,6 +1551,11 @@ function showMod(n) {
   document.getElementById('ntab'+n).classList.add('active');
   window.scrollTo({top:0,behavior:'smooth'});
   if(n===4) histCargar();
+  // Publish module switch for mirror
+  if(!sesionEspejo && sesionActual){
+    var modNames = {1:'Solicitud de Pedido', 2:'Inventario', 3:'Evaluacion de Entrega', 4:'Historial Inventarios', 5:'Compras Conciliadas'};
+    espejoPublicarEstado(modNames[n]||'', 'Modulo abierto', {});
+  }
   if(n===5) conciliacionCargar();
 }
 
@@ -2407,9 +2412,15 @@ function loginSubmit(){
         sesionActual.modoLectura = true;
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('app-root').style.display = 'block';
-        aplicarRol();
-        espejoPollStart();
+        // Show mirror view immediately
+        document.querySelectorAll('.ntab').forEach(function(t){ t.style.display='none'; });
+        document.querySelectorAll('.module').forEach(function(m){ m.classList.remove('active'); });
+        var ev = document.getElementById('espejo-view');
+        if(ev) ev.style.display = 'block';
         espejoMostrarBanner();
+        espejoBloquear();
+        // Start polling immediately
+        espejoPollStart();
       } else {
         // Register session and enter normal mode
         sesionEspejo = false;
@@ -2473,17 +2484,8 @@ function aplicarRol(){
     if(sdpSel){ sdpSel.disabled = false; sdpSel.value = 'CEDIS'; setSucursal(); }
   }
 
-  // Mirror mode: show read-only view
-  if(sesionEspejo){
-    espejoBloquear();
-    // Hide all tabs and modules, show mirror view
-    document.querySelectorAll('.ntab').forEach(function(t){ t.style.display='none'; });
-    document.querySelectorAll('.module').forEach(function(m){ m.classList.remove('active'); });
-    var ev = document.getElementById('espejo-view');
-    if(ev) ev.style.display='block';
-    espejoPollStart();
-    return;
-  }
+  // Mirror mode already handled in loginSubmit
+  if(sesionEspejo) return;
 
   // Show first available tab
   if(rol === 'cedis'){
@@ -3124,7 +3126,15 @@ function espejoRenderEstado(){
   var modulo = espejoEstado.modulo || '';
   var paso   = espejoEstado.paso || '';
   var datos  = espejoEstado.datos || {};
-  if(!modulo){ wrap.innerHTML = '<p style="text-align:center;padding:40px;color:var(--grey-txt);">El usuario principal no tiene actividad en este momento.</p>'; return; }
+  if(!modulo){
+    wrap.innerHTML = '<div style="text-align:center;padding:60px;">' +
+      '<div style="font-size:40px;margin-bottom:16px;">&#128065;</div>' +
+      '<div style="font-size:16px;font-weight:600;color:var(--dark);margin-bottom:8px;">Esperando actividad...</div>' +
+      '<div style="font-size:13px;color:var(--grey-txt);">En cuanto el usuario inicie una tarea aparecera aqui en tiempo real.</div>' +
+      '<div style="font-size:12px;color:var(--blue);margin-top:12px;">Actualizando cada 10 segundos</div>' +
+      '</div>';
+    return;
+  }
   
   var h = '<div style="background:var(--blue-lt);border-radius:12px;padding:20px;margin-bottom:16px;">' +
     '<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--grey-txt);margin-bottom:6px;">Modulo activo</div>' +
@@ -4641,9 +4651,15 @@ function loginSubmit(){
         sesionActual.modoLectura = true;
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('app-root').style.display = 'block';
-        aplicarRol();
-        espejoPollStart();
+        // Show mirror view immediately
+        document.querySelectorAll('.ntab').forEach(function(t){ t.style.display='none'; });
+        document.querySelectorAll('.module').forEach(function(m){ m.classList.remove('active'); });
+        var ev = document.getElementById('espejo-view');
+        if(ev) ev.style.display = 'block';
         espejoMostrarBanner();
+        espejoBloquear();
+        // Start polling immediately
+        espejoPollStart();
       } else {
         // Register session and enter normal mode
         sesionEspejo = false;
@@ -4707,17 +4723,8 @@ function aplicarRol(){
     if(sdpSel){ sdpSel.disabled = false; sdpSel.value = 'CEDIS'; setSucursal(); }
   }
 
-  // Mirror mode: show read-only view
-  if(sesionEspejo){
-    espejoBloquear();
-    // Hide all tabs and modules, show mirror view
-    document.querySelectorAll('.ntab').forEach(function(t){ t.style.display='none'; });
-    document.querySelectorAll('.module').forEach(function(m){ m.classList.remove('active'); });
-    var ev = document.getElementById('espejo-view');
-    if(ev) ev.style.display='block';
-    espejoPollStart();
-    return;
-  }
+  // Mirror mode already handled in loginSubmit
+  if(sesionEspejo) return;
 
   // Show first available tab
   if(rol === 'cedis'){
@@ -5358,7 +5365,15 @@ function espejoRenderEstado(){
   var modulo = espejoEstado.modulo || '';
   var paso   = espejoEstado.paso || '';
   var datos  = espejoEstado.datos || {};
-  if(!modulo){ wrap.innerHTML = '<p style="text-align:center;padding:40px;color:var(--grey-txt);">El usuario principal no tiene actividad en este momento.</p>'; return; }
+  if(!modulo){
+    wrap.innerHTML = '<div style="text-align:center;padding:60px;">' +
+      '<div style="font-size:40px;margin-bottom:16px;">&#128065;</div>' +
+      '<div style="font-size:16px;font-weight:600;color:var(--dark);margin-bottom:8px;">Esperando actividad...</div>' +
+      '<div style="font-size:13px;color:var(--grey-txt);">En cuanto el usuario inicie una tarea aparecera aqui en tiempo real.</div>' +
+      '<div style="font-size:12px;color:var(--blue);margin-top:12px;">Actualizando cada 10 segundos</div>' +
+      '</div>';
+    return;
+  }
   
   var h = '<div style="background:var(--blue-lt);border-radius:12px;padding:20px;margin-bottom:16px;">' +
     '<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--grey-txt);margin-bottom:6px;">Modulo activo</div>' +

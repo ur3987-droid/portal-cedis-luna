@@ -2403,13 +2403,17 @@ function loginSubmit(){
     return;
   }
   sesionActual = {email:email, rol:user.rol, sucursal:user.sucursal, nombre:user.nombre};
-  // Check if another session is already active for this user
-  console.log('Checking session for:', email);
-  fetch(SCRIPT_URL + '?tipo=sesion_check&email=' + encodeURIComponent(email))
+  // Generate unique tab ID to distinguish this browser tab/device
+  var tabId = sessionStorage.getItem('lmc_tab_id');
+  if(!tabId){ tabId = 'tab_' + Date.now() + '_' + Math.random().toString(36).slice(2,7); sessionStorage.setItem('lmc_tab_id', tabId); }
+  sesionActual.tabId = tabId;
+  // Check if another session is already active for this user (from a DIFFERENT tab/device)
+  console.log('Checking session for:', email, 'tabId:', tabId);
+  fetch(SCRIPT_URL + '?tipo=sesion_check&email=' + encodeURIComponent(email) + '&tabId=' + encodeURIComponent(tabId))
     .then(function(r){ return r.json(); })
     .then(function(data){
       console.log('sesion_check result:', JSON.stringify(data));
-      if(data && data.activa){
+      if(data && data.activa && data.tabId !== tabId){
         // Enter mirror/read-only mode
         sesionEspejo = true;
         sesionActual.modoLectura = true;
@@ -3079,14 +3083,15 @@ var espejoTimer = null;
 var espejoEstado = {};
 
 function sesionRegistrar(email){
-  console.log('Registering session for:', email);
-  fetch(SCRIPT_URL + '?tipo=sesion_registrar&email=' + encodeURIComponent(email) + '&ts=' + Date.now())
+  var tabId = sesionActual ? (sesionActual.tabId || '') : '';
+  console.log('Registering session for:', email, 'tabId:', tabId);
+  fetch(SCRIPT_URL + '?tipo=sesion_registrar&email=' + encodeURIComponent(email) + '&tabId=' + encodeURIComponent(tabId) + '&ts=' + Date.now())
     .then(function(r){ return r.json(); })
     .then(function(d){ console.log('Session registered OK:', JSON.stringify(d)); })
     .catch(function(e){ console.log('Session register error:', e); });
-  // Heartbeat cada 60 segundos para mantener sesion activa (5min window in AS)
+  // Heartbeat cada 60 segundos
   setInterval(function(){
-    fetch(SCRIPT_URL + '?tipo=sesion_registrar&email=' + encodeURIComponent(email) + '&ts=' + Date.now())
+    fetch(SCRIPT_URL + '?tipo=sesion_registrar&email=' + encodeURIComponent(email) + '&tabId=' + encodeURIComponent(tabId) + '&ts=' + Date.now())
       .catch(function(){});
   }, 60000);
   // Remove session on page close

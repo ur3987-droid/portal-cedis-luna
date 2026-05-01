@@ -282,6 +282,8 @@ textarea{resize:vertical;min-height:72px;line-height:1.6;}
     <div class="ntab" id="ntab2" onclick="showMod(2)">&#128230; Inventario</div>
     <div class="ntab" id="ntab1" onclick="showMod(1)">&#128722; Solicitud de Pedido</div>
     <div class="ntab" id="ntab3" onclick="showMod(3)">&#128203; Evaluacion de Entrega</div>
+    <div class="ntab" id="ntab5" onclick="showMod(5)" style="display:none;">&#128179; Compras Conciliadas</div>
+
 
 
 
@@ -597,7 +599,7 @@ textarea{resize:vertical;min-height:72px;line-height:1.6;}
   <div id="inv-catalog"></div>
   <div style="display:flex;justify-content:space-between;margin-top:20px;">
     <button class="btn-secondary" onclick="invBack1()">&larr; Regresar</button>
-    <button class="btn-primary" onclick="invNext2()">Ver sugerencias &rarr;</button>
+    <button class="btn-primary" onclick="invNext2()" id="inv-next2-btn">Ver sugerencias &rarr;</button>
   </div></div>
 </div>
 <div class="wrap" id="inv-p3" style="display:none;">
@@ -1547,7 +1549,7 @@ function resetPortal(){
 
 // ══ MODULE NAVIGATION ══
 function showMod(n) {
-  for (var i=1;i<=4;i++) {
+  for (var i=1;i<=5;i++) {
     var m=document.getElementById('mod'+i), t=document.getElementById('ntab'+i);
     if(m) m.classList.remove('active');
     if(t) t.classList.remove('active');
@@ -1556,6 +1558,7 @@ function showMod(n) {
   document.getElementById('ntab'+n).classList.add('active');
   window.scrollTo({top:0,behavior:'smooth'});
   if(n===4) histCargar();
+  if(n===5) conciliacionCargar();
 }
 
 // ══ IFRAME POST helper ══
@@ -1597,6 +1600,8 @@ function iframePost(url, data, cb) {
 
 // ══ INVENTARIO ══
 var invConteo={},invSugerencias=[];
+var invAutosaveTimer = null;
+var INV_BORRADOR_KEY = 'lmc_inv_borrador';
 var INV_SUCS={'Ávila Camacho':{correo:'lunamediacentro@gmail.com',gerente:'Luis Enrique Velazquez Hernandez'},'Avila Camacho':{correo:'lunamediacentro@gmail.com',gerente:'Luis Enrique Velazquez Hernandez'},'Paseo Jardines':{correo:'lunamediapaseojardines@gmail.com',gerente:'Ingrid Arely Martinez Diaz'},'Postrería':{correo:'postrerialunamediacafe@gmail.com',gerente:'Eduardo Hernandez Cancela'},'Postreria':{correo:'postrerialunamediacafe@gmail.com',gerente:'Eduardo Hernandez Cancela'}};
 
 function invFill(){
@@ -1624,6 +1629,21 @@ function invFill(){
 function invStepbar(cur){for(var i=1;i<=3;i++){var s=document.getElementById('inv-st'+i),d=document.getElementById('inv-sd'+i);if(!s||!d)continue;s.className='stp';if(i<cur){s.classList.add('done');d.textContent='V';}else if(i===cur){s.classList.add('active');d.textContent=i;}else d.textContent=i;}}
 function invNext1(){
   if(!document.getElementById('inv-suc').value){alert('Selecciona una sucursal.');return;}
+  // Check for existing draft
+  var suc = document.getElementById('inv-suc').value;
+  invCargarBorrador(suc, function(borrador){
+    if(borrador){
+      if(confirm('Hay un inventario en progreso guardado el ' + new Date(borrador.timestamp).toLocaleString('es-MX',{hour12:false}) + '. ¿Deseas continuar donde lo dejaste?')){
+        setTimeout(function(){ invRestaurarBorrador(borrador); }, 800);
+      } else {
+        invEliminarBorrador(suc);
+      }
+    }
+  });
+  // Publish mirror state
+  invPublicarEstado(suc, true);
+  // Start autosave
+  invIniciarAutosave();
   
 document.getElementById('inv-p1').style.display='none';document.getElementById('inv-p2').style.display='block';invStepbar(2);invRender();window.scrollTo({top:0,behavior:'smooth'});}
 function invBack1(){document.getElementById('inv-p2').style.display='none';document.getElementById('inv-p1').style.display='block';invStepbar(1);window.scrollTo({top:0,behavior:'smooth'});}
@@ -1846,6 +1866,10 @@ function invSubmit(){
     var resumen = conExistencia.map(function(r){ return r.code+'|'+r.name+'|'+r.cantidad.toFixed(2)+'|$'+r.precio.toFixed(2); }).join(';');
 
     function finalizarInv(){
+  // Stop autosave and publish mirror done
+  invDetenerAutosave();
+  var suc = document.getElementById('inv-suc') ? document.getElementById('inv-suc').value : '';
+  if(suc){ invEliminarBorrador(suc); invPublicarEstado(suc, false); }
       invGuardarHistorial(folio, suc, fecha, totalItems, totalCosto, doc);
       document.getElementById('loadingOverlay').classList.remove('show');
       document.getElementById('inv-p3').style.display='none';
@@ -2397,7 +2421,8 @@ function aplicarRol(){
     'ntab4': ['admin','cedis','sucursal'],  // Historial
     'ntab2': ['admin','sucursal'],           // Inventario
     'ntab1': ['admin','cedis','sucursal'],   // Solicitud Pedido / Asignaciones
-    'ntab3': ['admin','sucursal']            // Evaluacion
+    'ntab3': ['admin','sucursal'],           // Evaluacion
+    'ntab5': ['admin'],                      // Compras Conciliadas
   };
   Object.keys(tabsPermitidos).forEach(function(id){
     var el = document.getElementById(id);
@@ -2764,6 +2789,249 @@ function cargarExistenciaInventario(sucursal, cb){
     })
     .catch(function(){ if(cb) cb(); });
 }
+
+// ══ BORRADOR INVENTARIO — AUTOSAVE ══
+function invGuardarBorrador(){
+  var suc = document.getElementById('inv-suc') ? document.getElementById('inv-suc').value : '';
+  if(!suc || !sesionActual) return;
+  var borrador = {
+    sucursal: suc,
+    gerente: document.getElementById('inv-ger') ? document.getElementById('inv-ger').value : '',
+    dia: document.getElementById('inv-dia') ? document.getElementById('inv-dia').value : '',
+    timestamp: Date.now(),
+    conteo: invConteo
+  };
+  // Save to Drive via Apps Script (non-blocking)
+  try {
+    var key = 'borrador_' + suc.replace(/[^a-zA-Z]/g,'_');
+    fetch(SCRIPT_URL + '?tipo=borrador_save&sucursal=' + encodeURIComponent(suc) + '&datos=' + encodeURIComponent(JSON.stringify(borrador)))
+      .catch(function(){});
+  } catch(e){}
+}
+
+function invIniciarAutosave(){
+  invDetenerAutosave();
+  invAutosaveTimer = setInterval(function(){
+    invGuardarBorrador();
+    invMostrarIndicadorSave();
+  }, 30000); // cada 30 segundos
+}
+
+function invDetenerAutosave(){
+  if(invAutosaveTimer){ clearInterval(invAutosaveTimer); invAutosaveTimer = null; }
+}
+
+function invMostrarIndicadorSave(){
+  var ind = document.getElementById('inv-autosave-ind');
+  if(!ind) return;
+  ind.textContent = '✓ Guardado automaticamente ' + new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+  ind.style.opacity = '1';
+  setTimeout(function(){ ind.style.opacity = '0'; }, 3000);
+}
+
+function invCargarBorrador(suc, cb){
+  fetch(SCRIPT_URL + '?tipo=borrador_get&sucursal=' + encodeURIComponent(suc))
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if(data && data.conteo && data.timestamp){
+        var hace24hrs = Date.now() - (24 * 60 * 60 * 1000);
+        if(data.timestamp < hace24hrs){
+          // Borrador expirado — limpiar
+          invEliminarBorrador(suc);
+          if(cb) cb(null);
+          return;
+        }
+        if(cb) cb(data);
+      } else {
+        if(cb) cb(null);
+      }
+    })
+    .catch(function(){ if(cb) cb(null); });
+}
+
+function invEliminarBorrador(suc){
+  fetch(SCRIPT_URL + '?tipo=borrador_delete&sucursal=' + encodeURIComponent(suc)).catch(function(){});
+}
+
+function invRestaurarBorrador(borrador){
+  if(!borrador) return;
+  invConteo = borrador.conteo || {};
+  // Refresh UI
+  document.querySelectorAll('.inv-qty-input').forEach(function(inp){
+    var code = inp.getAttribute('data-code');
+    if(code && invConteo[code] !== undefined){
+      inp.value = invConteo[code];
+      var card = document.getElementById('icard-' + code);
+      if(card) card.classList.toggle('has-qty', parseFloat(invConteo[code]) > 0);
+    }
+  });
+  invActualizarTotales();
+}
+
+// ══ SESION ESPEJO — MONITOR ══
+function invPublicarEstado(suc, activo){
+  if(!suc) return;
+  fetch(SCRIPT_URL + '?tipo=espejo_update&sucursal=' + encodeURIComponent(suc) + '&activo=' + (activo?'1':'0') + '&usuario=' + encodeURIComponent(sesionActual ? sesionActual.nombre : '') + '&hora=' + encodeURIComponent(new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}))).catch(function(){});
+}
+
+function monitorCargarEstados(){
+  if(!sesionActual || sesionActual.rol !== 'admin') return;
+  fetch(SCRIPT_URL + '?tipo=espejo_list')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      monitorRender(data || []);
+    }).catch(function(){});
+}
+
+function monitorRender(estados){
+  var wrap = document.getElementById('monitor-estados');
+  if(!wrap) return;
+  var activos = estados.filter(function(e){ return e.activo; });
+  if(!activos.length){
+    wrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--grey-txt);font-size:14px;">No hay inventarios en progreso en este momento.</div>';
+    return;
+  }
+  var h = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;">';
+  activos.forEach(function(e){
+    h += '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:12px;padding:16px;border-left:4px solid #2E9E6B;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+      '<div style="font-size:15px;font-weight:700;color:var(--dark);">' + e.sucursal + '</div>' +
+      '<span style="background:rgba(46,158,107,.12);color:#2E9E6B;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;">● EN PROGRESO</span>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--grey-txt);">Iniciado por: <strong>' + (e.usuario||'—') + '</strong></div>' +
+      '<div style="font-size:12px;color:var(--grey-txt);">Hora de inicio: ' + (e.hora||'—') + '</div>' +
+      '</div>';
+  });
+  h += '</div>';
+  wrap.innerHTML = h;
+}
+
+// ══ COMPRAS CONCILIADAS ══
+var concFolioActual = '';
+var concSucActual = '';
+
+function conciliacionCargar(){
+  var suc = document.getElementById('conc-suc').value;
+  var desde = document.getElementById('conc-desde').value;
+  var hasta = document.getElementById('conc-hasta').value;
+  var estadoF = document.getElementById('conc-estado-filtro').value;
+  var tablaEl = document.getElementById('conc-tabla');
+  tablaEl.innerHTML = '<div style="text-align:center;padding:30px;color:var(--grey-txt);">Cargando...</div>';
+
+  var url = SCRIPT_URL + '?tipo=conciliacion_list';
+  if(suc) url += '&sucursal=' + encodeURIComponent(suc);
+  if(desde) url += '&desde=' + encodeURIComponent(desde);
+  if(hasta) url += '&hasta=' + encodeURIComponent(hasta);
+
+  fetch(url)
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if(!data || !data.length){ tablaEl.innerHTML = '<div style="text-align:center;padding:30px;color:var(--grey-txt);">No hay registros para el periodo seleccionado.</div>'; return; }
+      // Filter by estado
+      var rows = estadoF ? data.filter(function(r){ return r.estado === estadoF; }) : data;
+      concRender(rows);
+    })
+    .catch(function(){ tablaEl.innerHTML = '<div style="text-align:center;padding:20px;color:#D4504A;">Error al cargar datos.</div>'; });
+}
+
+function concRender(rows){
+  var totalPed = 0, montoTotal = 0, montoReal = 0;
+  var h = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+  h += '<thead><tr style="background:var(--blue-dkr);">';
+  ['Folio','Fecha','Sucursal','Entrega requerida','Monto estimado','Monto real','Diferencia','Estado','Acciones'].forEach(function(c){
+    h += '<th style="padding:9px 12px;color:rgba(255,255,255,.85);font-size:11px;text-align:left;white-space:nowrap;">' + c + '</th>';
+  });
+  h += '</tr></thead><tbody>';
+
+  rows.forEach(function(r, i){
+    var esCancelada = r.estado === 'CANCELADA';
+    var montoEst = parseFloat((r.totalEstimado||'0').replace(/[$,]/g,'')) || 0;
+    var montoRe  = esCancelada ? 0 : (parseFloat((r.totalReal||'0').replace(/[$,]/g,'')) || (r.estado === 'VENCIDA' || r.estado === 'PENDIENTE' ? montoEst : 0));
+    var diff = montoRe - montoEst;
+    var diffColor = diff === 0 ? '#2E9E6B' : diff < 0 ? '#D4504A' : '#2E9E6B';
+    var estadoColor = {EVALUADA:'#2E9E6B', PENDIENTE:'#E07B2A', VENCIDA:'#D4504A', CANCELADA:'#6B7E93'}[r.estado] || '#6B7E93';
+
+    if(!esCancelada){
+      totalPed++;
+      montoTotal += montoEst;
+      montoReal  += montoRe;
+    }
+
+    h += '<tr style="background:' + (i%2===0?'#fff':'#f5f8fc') + ';border-top:1px solid var(--grey-lt);' + (esCancelada?'opacity:.5;':'') + '">';
+    h += '<td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--blue);white-space:nowrap;">' + (r.folio||'') + '</td>';
+    h += '<td style="padding:8px 12px;white-space:nowrap;">' + (r.fecha||'') + '</td>';
+    h += '<td style="padding:8px 12px;">' + (r.sucursal||'') + '</td>';
+    h += '<td style="padding:8px 12px;white-space:nowrap;">' + (r.fechaEntrega||'') + '</td>';
+    h += '<td style="padding:8px 12px;font-weight:600;">' + (esCancelada ? '<span style="color:#6B7E93;">TOTAL ESTIMADO $0.00</span>' : ('$' + montoEst.toFixed(2))) + '</td>';
+    h += '<td style="padding:8px 12px;font-weight:600;color:#2E9E6B;">' + (esCancelada ? '—' : ('$' + montoRe.toFixed(2))) + '</td>';
+    h += '<td style="padding:8px 12px;font-weight:700;color:' + diffColor + ';">' + (esCancelada ? '—' : ((diff >= 0 ? '+' : '') + '$' + diff.toFixed(2))) + '</td>';
+    h += '<td style="padding:8px 12px;"><span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;background:' + estadoColor + '22;color:' + estadoColor + ';">' + (r.estado||'') + '</span></td>';
+    h += '<td style="padding:8px 12px;">';
+    if(!esCancelada && r.estado !== 'EVALUADA'){
+      h += '<button onclick="conciliacionCancelarAbrir(' + JSON.stringify(r.folio) + ',' + JSON.stringify(r.sucursal) + ')" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid #D4504A;background:#fff;cursor:pointer;color:#D4504A;font-weight:600;">Cancelar</button>';
+    }
+    h += '</td></tr>';
+  });
+
+  h += '</tbody>';
+  // Totals row
+  var diff = montoReal - montoTotal;
+  h += '<tfoot><tr style="background:var(--blue-lt);font-weight:700;">';
+  h += '<td colspan="4" style="padding:10px 12px;color:var(--blue-dk);text-align:right;">TOTAL PERIODO (' + totalPed + ' pedidos)</td>';
+  h += '<td style="padding:10px 12px;color:var(--blue-dk);">$' + montoTotal.toFixed(2) + '</td>';
+  h += '<td style="padding:10px 12px;color:#2E9E6B;">$' + montoReal.toFixed(2) + '</td>';
+  h += '<td style="padding:10px 12px;color:' + (diff>=0?'#2E9E6B':'#D4504A') + ';">' + (diff>=0?'+':'') + '$' + diff.toFixed(2) + '</td>';
+  h += '<td colspan="2"></td></tr></tfoot>';
+  h += '</table></div>';
+
+  document.getElementById('conc-tabla').innerHTML = h;
+  document.getElementById('conc-total-ped').textContent = totalPed;
+  document.getElementById('conc-monto-total').textContent = '$' + montoTotal.toFixed(2);
+  document.getElementById('conc-monto-real').textContent = '$' + montoReal.toFixed(2);
+  var d = montoReal - montoTotal;
+  document.getElementById('conc-diferencia').textContent = (d>=0?'+':'') + '$' + d.toFixed(2);
+  document.getElementById('conc-diferencia').style.color = d >= 0 ? '#2E9E6B' : '#D4504A';
+}
+
+function conciliacionCancelarAbrir(folio, sucursal){
+  concFolioActual = folio;
+  concSucActual = sucursal;
+  document.getElementById('modal-cancel-folio').textContent = folio;
+  document.getElementById('modal-cancel-suc').textContent = sucursal;
+  document.getElementById('cancel-motivo').value = '';
+  document.getElementById('cancel-obs').value = '';
+  document.getElementById('modal-cancelar').style.display = 'flex';
+}
+
+function conciliacionCancelarConfirmar(){
+  var motivo = document.getElementById('cancel-motivo').value;
+  if(!motivo){ alert('Selecciona un motivo de cancelacion.'); return; }
+  var obs = document.getElementById('cancel-obs').value;
+  document.getElementById('modal-cancelar').style.display = 'none';
+  iframePost(SCRIPT_URL, {
+    tipo: 'cancelar_sdp',
+    folio: concFolioActual,
+    sucursal: concSucActual,
+    motivo: motivo,
+    observaciones: obs,
+    canceladoPor: sesionActual ? sesionActual.nombre : 'Admin',
+    timestamp: new Date(Date.now()+3600000).toLocaleString('es-MX',{hour12:false})
+  }, function(){
+    conciliacionCargar();
+    alert('SDP ' + concFolioActual + ' cancelada correctamente. Se han enviado notificaciones a todos los involucrados.');
+  });
+}
+
+// Set default dates for conciliacion (current month)
+(function(){
+  var hoy = new Date(Date.now()+3600000);
+  var primeroDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0];
+  var hoyStr = hoy.toISOString().split('T')[0];
+  var d = document.getElementById('conc-desde');
+  var h = document.getElementById('conc-hasta');
+  if(d) d.value = primeroDiaMes;
+  if(h) h.value = hoyStr;
+})();
 </script>
 
 
@@ -2799,6 +3067,96 @@ function cargarExistenciaInventario(sucursal, cb){
 </div>
 </div><!-- end mod4 -->
 
+
+<!-- MOD5: COMPRAS CONCILIADAS -->
+<div class="module" id="mod5">
+<div class="wrap">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+      <div>
+        <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:4px;">Compras Conciliadas</h2>
+        <p style="font-size:13px;color:var(--grey-txt);">Historial de SDP vs evaluaciones de entrega por periodo. SDP vencidas sin evaluar toman el monto original.</p>
+      </div>
+    </div>
+    <!-- Filtros -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:12px;margin-bottom:20px;align-items:end;flex-wrap:wrap;">
+      <div class="field"><label>Sucursal</label>
+        <div class="sel-wrap"><select id="conc-suc">
+          <option value="">Todas</option>
+          <option value="ÁVILA CAMACHO">Ávila Camacho</option>
+          <option value="PASEO JARDINES">Paseo Jardines</option>
+          <option value="POSTRERÍA">Postrería</option>
+        </select></div>
+      </div>
+      <div class="field"><label>Desde</label><input type="date" id="conc-desde"></div>
+      <div class="field"><label>Hasta</label><input type="date" id="conc-hasta"></div>
+      <div class="field"><label>Estado</label>
+        <div class="sel-wrap"><select id="conc-estado-filtro">
+          <option value="">Todos</option>
+          <option value="EVALUADA">Evaluadas</option>
+          <option value="VENCIDA">Vencidas</option>
+          <option value="PENDIENTE">Pendientes</option>
+          <option value="CANCELADA">Canceladas</option>
+        </select></div>
+      </div>
+      <button onclick="conciliacionCargar()" style="background:var(--blue);color:#fff;padding:9px 18px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">Buscar</button>
+    </div>
+    <!-- Resumen tarjetas -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;" id="conc-resumen-cards">
+      <div style="background:var(--blue-lt);border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--grey-txt);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Total pedidos</div>
+        <div style="font-size:22px;font-weight:700;color:var(--blue-dk);" id="conc-total-ped">—</div>
+      </div>
+      <div style="background:#E8F7F1;border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--grey-txt);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Monto total periodo</div>
+        <div style="font-size:22px;font-weight:700;color:#2E9E6B;" id="conc-monto-total">—</div>
+      </div>
+      <div style="background:#FEF3E8;border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--grey-txt);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Monto real recibido</div>
+        <div style="font-size:22px;font-weight:700;color:#E07B2A;" id="conc-monto-real">—</div>
+      </div>
+      <div style="background:#FDECEA;border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--grey-txt);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Diferencia</div>
+        <div style="font-size:22px;font-weight:700;color:#D4504A;" id="conc-diferencia">—</div>
+      </div>
+    </div>
+    <div id="conc-tabla"></div>
+    <!-- Modal cancelar SDP -->
+    <div id="modal-cancelar" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9000;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:16px;padding:28px;width:100%;max-width:480px;margin:20px;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+        <h3 style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#D4504A;margin-bottom:6px;">Cancelar SDP</h3>
+        <p style="font-size:13px;color:var(--grey-txt);margin-bottom:16px;">Esta accion no se puede deshacer. La SDP quedara marcada como CANCELADA y se notificara a todos.</p>
+        <div style="background:#FDECEA;border-radius:10px;padding:12px 14px;margin-bottom:16px;">
+          <div id="modal-cancel-folio" style="font-size:16px;font-weight:700;color:#D4504A;font-family:monospace;"></div>
+          <div id="modal-cancel-suc" style="font-size:13px;color:var(--grey-txt);margin-top:2px;"></div>
+        </div>
+        <div class="field" style="margin-bottom:16px;">
+          <label>Motivo de cancelacion <span style="color:#D4504A;">*</span></label>
+          <div class="sel-wrap"><select id="cancel-motivo">
+            <option value="">Selecciona motivo...</option>
+            <option value="Pedido de prueba">Pedido de prueba</option>
+            <option value="Error en productos">Error en productos solicitados</option>
+            <option value="Error en cantidades">Error en cantidades</option>
+            <option value="Pedido duplicado">Pedido duplicado</option>
+            <option value="Cambio de fecha">Cambio de fecha de entrega</option>
+            <option value="Otro">Otro</option>
+          </select></div>
+        </div>
+        <div class="field" style="margin-bottom:20px;">
+          <label>Observaciones adicionales</label>
+          <input type="text" id="cancel-obs" placeholder="Detalle adicional (opcional)" style="width:100%;">
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;">
+          <button onclick="document.getElementById('modal-cancelar').style.display='none'" style="background:var(--grey-lt);color:var(--dark);padding:9px 20px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer;">Cancelar</button>
+          <button onclick="conciliacionCancelarConfirmar()" style="background:#D4504A;color:#fff;padding:9px 20px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">Confirmar cancelacion</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
 </div><!-- end app-root -->
+<div id="inv-autosave-ind" style="position:fixed;bottom:20px;right:20px;background:rgba(46,158,107,.95);color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;z-index:99999;opacity:0;transition:opacity .6s;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.2);"></div>
 </body>
 </html>

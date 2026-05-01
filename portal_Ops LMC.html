@@ -2403,9 +2403,11 @@ function loginSubmit(){
   }
   sesionActual = {email:email, rol:user.rol, sucursal:user.sucursal, nombre:user.nombre};
   // Check if another session is already active for this user
+  console.log('Checking session for:', email);
   fetch(SCRIPT_URL + '?tipo=sesion_check&email=' + encodeURIComponent(email))
     .then(function(r){ return r.json(); })
     .then(function(data){
+      console.log('sesion_check result:', JSON.stringify(data));
       if(data && data.activa){
         // Enter mirror/read-only mode
         sesionEspejo = true;
@@ -2431,10 +2433,12 @@ function loginSubmit(){
         aplicarRol();
       }
     })
-    .catch(function(){
-      // If check fails, proceed normally
+    .catch(function(err){
+      console.log('sesion_check error:', err);
+      // On error, proceed normally
       sesionEspejo = false;
       sesionActual.modoLectura = false;
+      sesionRegistrar(email);
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('app-root').style.display = 'block';
       aplicarRol();
@@ -3074,13 +3078,16 @@ var espejoTimer = null;
 var espejoEstado = {};
 
 function sesionRegistrar(email){
+  console.log('Registering session for:', email);
   fetch(SCRIPT_URL + '?tipo=sesion_registrar&email=' + encodeURIComponent(email) + '&ts=' + Date.now())
-    .catch(function(){});
-  // Heartbeat cada 30 segundos para mantener sesion activa
+    .then(function(r){ return r.json(); })
+    .then(function(d){ console.log('Session registered OK:', JSON.stringify(d)); })
+    .catch(function(e){ console.log('Session register error:', e); });
+  // Heartbeat cada 60 segundos para mantener sesion activa (5min window in AS)
   setInterval(function(){
     fetch(SCRIPT_URL + '?tipo=sesion_registrar&email=' + encodeURIComponent(email) + '&ts=' + Date.now())
       .catch(function(){});
-  }, 30000);
+  }, 60000);
   // Remove session on page close
   window.addEventListener('beforeunload', function(){
     fetch(SCRIPT_URL + '?tipo=sesion_cerrar&email=' + encodeURIComponent(email)).catch(function(){});
@@ -4642,9 +4649,11 @@ function loginSubmit(){
   }
   sesionActual = {email:email, rol:user.rol, sucursal:user.sucursal, nombre:user.nombre};
   // Check if another session is already active for this user
+  console.log('Checking session for:', email);
   fetch(SCRIPT_URL + '?tipo=sesion_check&email=' + encodeURIComponent(email))
     .then(function(r){ return r.json(); })
     .then(function(data){
+      console.log('sesion_check result:', JSON.stringify(data));
       if(data && data.activa){
         // Enter mirror/read-only mode
         sesionEspejo = true;
@@ -4670,10 +4679,12 @@ function loginSubmit(){
         aplicarRol();
       }
     })
-    .catch(function(){
-      // If check fails, proceed normally
+    .catch(function(err){
+      console.log('sesion_check error:', err);
+      // On error, proceed normally
       sesionEspejo = false;
       sesionActual.modoLectura = false;
+      sesionRegistrar(email);
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('app-root').style.display = 'block';
       aplicarRol();
@@ -5313,13 +5324,16 @@ var espejoTimer = null;
 var espejoEstado = {};
 
 function sesionRegistrar(email){
+  console.log('Registering session for:', email);
   fetch(SCRIPT_URL + '?tipo=sesion_registrar&email=' + encodeURIComponent(email) + '&ts=' + Date.now())
-    .catch(function(){});
-  // Heartbeat cada 30 segundos para mantener sesion activa
+    .then(function(r){ return r.json(); })
+    .then(function(d){ console.log('Session registered OK:', JSON.stringify(d)); })
+    .catch(function(e){ console.log('Session register error:', e); });
+  // Heartbeat cada 60 segundos para mantener sesion activa (5min window in AS)
   setInterval(function(){
     fetch(SCRIPT_URL + '?tipo=sesion_registrar&email=' + encodeURIComponent(email) + '&ts=' + Date.now())
       .catch(function(){});
-  }, 30000);
+  }, 60000);
   // Remove session on page close
   window.addEventListener('beforeunload', function(){
     fetch(SCRIPT_URL + '?tipo=sesion_cerrar&email=' + encodeURIComponent(email)).catch(function(){});

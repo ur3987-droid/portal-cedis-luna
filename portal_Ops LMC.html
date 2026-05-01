@@ -280,6 +280,7 @@ textarea{resize:vertical;min-height:72px;line-height:1.6;}
   <div class="nav-tabs-inner">
     <div class="ntab active" id="ntab4" onclick="showMod(4)">&#128196; Historial Inventarios</div>
     <div class="ntab" id="ntab2" onclick="showMod(2)">&#128230; Inventario</div>
+    <div class="ntab" id="ntab7" onclick="showMod(7)" style="display:none;">&#128196; Historial SDP</div>
     <div class="ntab" id="ntab1" onclick="showMod(1)">&#128722; Solicitud de Pedido</div>
     <div class="ntab" id="ntab3" onclick="showMod(3)">&#128203; Evaluacion de Entrega</div>
     <div class="ntab" id="ntab5" onclick="showMod(5)" style="display:none;">&#128179; Compras Conciliadas</div>
@@ -1292,7 +1293,7 @@ function prodCard(p){
       <div class="prod-controls">
         <div class="qty-wrap" style="display:flex;align-items:center;border:1.5px solid ${hasQty?'var(--blue)':'var(--grey-mid)'};border-radius:7px;overflow:hidden;background:#fff;width:90px;">
           <button class="qty-btn" onclick="changeQty('${p.code}',-1)" style="width:26px;height:28px;border:none;background:none;font-size:16px;cursor:pointer;color:var(--blue);">−</button>
-          <input class="qty-input" type="number" min="0" value="${item.qty}"
+          <input class="qty-input" type="number" min="0" step="${isKgProduct(p.code)?0.1:1}" value="${item.qty}"
             id="qty-${p.code}" onchange="setQty('${p.code}',this.value)" style="width:38px;height:28px;border:none;text-align:center;font-family:DM Sans,sans-serif;font-size:13px;font-weight:600;outline:none;">
           <button class="qty-btn" onclick="changeQty('${p.code}',1)" style="width:26px;height:28px;border:none;background:none;font-size:16px;cursor:pointer;color:var(--blue);">+</button>
         </div>
@@ -1305,13 +1306,29 @@ function prodCard(p){
 
 function changeQty(code, delta){
   const inp = document.getElementById('qty-'+code);
-  const val = Math.max(0, (parseInt(inp.value)||0) + delta);
+  var step = isKgProduct(code) ? 0.1 : 1;
+  var current = isKgProduct(code) ? (parseFloat(inp.value)||0) : (parseInt(inp.value)||0);
+  var val = Math.max(0, Math.round((current + (delta * step)) * 100) / 100);
   inp.value = val;
   setQty(code, val);
 }
 
+function isKgProduct(code){
+  var p = CATALOGO.find(function(x){ return x.code === code; });
+  if(!p) return false;
+  var pres = (p.pres||'').toLowerCase();
+  return pres.indexOf('kg') >= 0 || pres.indexOf('kilo') >= 0;
+}
+
 function setQty(code, val){
-  const qty = Math.max(0, parseInt(val)||0);
+  var qty;
+  if(isKgProduct(code)){
+    qty = Math.max(0, parseFloat(val)||0);
+    // Round to 2 decimals for Kg
+    qty = Math.round(qty * 100) / 100;
+  } else {
+    qty = Math.max(0, parseInt(val)||0);
+  }
   if(!pedido[code]) pedido[code]={qty:0,obs:''};
   pedido[code].qty = qty;
   const card = document.getElementById('card-'+code);
@@ -1543,7 +1560,7 @@ function resetPortal(){
 
 // ══ MODULE NAVIGATION ══
 function showMod(n) {
-  for (var i=1;i<=5;i++) {
+  for (var i=1;i<=7;i++) {
     var m=document.getElementById('mod'+i), t=document.getElementById('ntab'+i);
     if(m) m.classList.remove('active');
     if(t) t.classList.remove('active');
@@ -1558,6 +1575,7 @@ function showMod(n) {
     espejoPublicarEstado(modNames[n]||'', 'Modulo abierto', {});
   }
   if(n===5) conciliacionCargar();
+  if(n===7) histSdpCargar();
 }
 
 // ══ IFRAME POST helper ══
@@ -1777,8 +1795,12 @@ function invBuildSugerencias(){
   container.innerHTML = h;
 }
 
+var invEnviando = false; // Lock to prevent duplicate sends
+
 function invSubmit(){
-  invEnvioTimestamp = Date.now(); // Marcar tiempo exacto al dar click en guardar
+  if(invEnviando){ console.log('Ya se esta enviando el inventario...'); return; }
+  invEnviando = true;
+  invEnvioTimestamp = Date.now();
   var suc = document.getElementById('inv-suc').value, info = INV_SUCS[suc]||{};
   var cat = (CATALOGO && CATALOGO.length > 0) ? CATALOGO : (typeof CATALOGO_LOCAL !== 'undefined' ? CATALOGO_LOCAL : []);
 
@@ -1791,8 +1813,9 @@ function invSubmit(){
     return {code:p.code, name:p.name, pres:p.pres, cat:p.cat, precio:p.precio||0, cantidad:val, subtotal:val*(p.precio||0)};
   });
 
-  var totalItems = rows.reduce(function(s,r){return s+r.cantidad;},0);
-  var totalCosto = rows.reduce(function(s,r){return s+r.subtotal;},0);
+  var rowsConExistencia = rows.filter(function(r){ return r.cantidad > 0; });
+  var totalItems = rowsConExistencia.reduce(function(s,r){ return s + r.cantidad; }, 0);
+  var totalCosto = rowsConExistencia.reduce(function(s,r){ return s + r.subtotal; }, 0);
   var folio = 'INV-' + (Date.now()+3600000).toString().slice(-6);
   var fecha = new Date(Date.now()+3600000).toLocaleString('es-MX',{hour12:false});
 
@@ -1862,9 +1885,10 @@ function invSubmit(){
     // Send to Apps Script via iframe POST (only products with quantity > 0)
     document.getElementById('loadingTxt').textContent = 'Enviando a correos...';
     var conExistencia = rows.filter(function(r){ return r.cantidad > 0; });
-    var resumen = conExistencia.map(function(r){ return r.code+'|'+r.name+'|'+r.cantidad.toFixed(2)+'|$'+r.precio.toFixed(2); }).join(';');
+    var resumen = rowsConExistencia.map(function(r){ return r.code+'|'+r.name+'|'+r.cantidad.toFixed(2)+'|$'+r.precio.toFixed(2); }).join(';');
 
     function finalizarInv(){
+  invEnviando = false; // Release lock
   // Stop autosave and publish mirror done
   invDetenerAutosave();
   var suc = document.getElementById('inv-suc') ? document.getElementById('inv-suc').value : '';
@@ -1886,7 +1910,7 @@ function invSubmit(){
       if(suc === 'Postreria' || suc === 'Postrería') return p.cat === 'POSTRERIA INSUMOS';
       return p.cat !== 'POSTRERIA INSUMOS';
     }).map(function(p){
-      var val = invConteo[p.code] !== undefined ? parseFloat(invConteo[p.code])||0 : 0;
+      var val = invConteo[p.code] !== undefined ? (parseFloat(invConteo[p.code])||0) : 0;
       return p.code + '|' + val.toFixed(2);
     }).join(';');
 
@@ -1904,6 +1928,7 @@ function invSubmit(){
     }, finalizarInv);
 
   } catch(e) {
+    invEnviando = false; // Release lock on error
     console.error('Error PDF:', e);
     document.getElementById('loadingOverlay').classList.remove('show');
     alert('Error generando PDF: ' + e.message);
@@ -2045,9 +2070,16 @@ function histRender(){
 function histVerPDFBtn(btn){
   var folio = btn.dataset.folio;
   var inv = invHistorial.find(function(i){return i.folio===folio;});
-  if(!inv||!inv.pdfData) return;
-  var win = window.open();
-  win.document.write('<iframe src="'+inv.pdfData+'" width="100%" height="100%" style="border:none;margin:0;padding:0;"></iframe>');
+  if(!inv) return;
+  // Try Drive URL first, then fallback to local pdfData
+  if(inv.pdfUrl){
+    window.open(inv.pdfUrl, '_blank');
+  } else if(inv.pdfData){
+    var win = window.open();
+    win.document.write('<iframe src="'+inv.pdfData+'" width="100%" height="100%" style="border:none;margin:0;padding:0;"></iframe>');
+  } else {
+    alert('PDF no disponible para este registro.');
+  }
 }
 
 function invVerPDFBtn(btn){histVerPDFBtn(btn);}
@@ -2464,6 +2496,7 @@ function aplicarRol(){
     'ntab1': ['admin','cedis','sucursal'],   // Solicitud Pedido / Asignaciones
     'ntab3': ['admin','sucursal'],           // Evaluacion
     'ntab5': ['admin'],                      // Compras Conciliadas
+    'ntab7': ['admin','cedis','sucursal']     // Historial SDP
   };
   Object.keys(tabsPermitidos).forEach(function(id){
     var el = document.getElementById(id);
@@ -3071,10 +3104,16 @@ function conciliacionCancelarConfirmar(){
   var hoy = new Date(Date.now()+3600000);
   var primeroDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0];
   var hoyStr = hoy.toISOString().split('T')[0];
+  // Compras conciliadas
   var d = document.getElementById('conc-desde');
   var h = document.getElementById('conc-hasta');
   if(d) d.value = primeroDiaMes;
   if(h) h.value = hoyStr;
+  // Historial SDP
+  var d2 = document.getElementById('hsdp-desde');
+  var h2 = document.getElementById('hsdp-hasta');
+  if(d2) d2.value = primeroDiaMes;
+  if(h2) h2.value = hoyStr;
 })();
 
 // ══ SESION ESPEJO — MODO LECTURA ══
@@ -3242,6 +3281,102 @@ function cargarCatalogoDinamico(cb) {
       if(cb) cb();
     });
 }
+
+// ══ HISTORIAL SDP ══
+function histSdpCargar(){
+  var lista = document.getElementById('hsdp-lista');
+  if(!lista) return;
+  lista.innerHTML = '<div style="text-align:center;padding:30px;color:var(--grey-txt);">Cargando...</div>';
+
+  var suc   = document.getElementById('hsdp-suc') ? document.getElementById('hsdp-suc').value : '';
+  var desde = document.getElementById('hsdp-desde') ? document.getElementById('hsdp-desde').value : '';
+  var hasta = document.getElementById('hsdp-hasta') ? document.getElementById('hsdp-hasta').value : '';
+  var estado = document.getElementById('hsdp-estado') ? document.getElementById('hsdp-estado').value : '';
+
+  // Sucursal role: force their own sucursal
+  if(sesionActual && sesionActual.rol === 'sucursal'){
+    var tabNorm = {'Ávila Camacho':'ÁVILA CAMACHO','Avila Camacho':'ÁVILA CAMACHO','Paseo Jardines':'PASEO JARDINES','Postrería':'POSTRERÍA','Postreria':'POSTRERÍA'};
+    suc = tabNorm[sesionActual.sucursal] || sesionActual.sucursal.toUpperCase();
+    var sucSel = document.getElementById('hsdp-suc');
+    if(sucSel){ sucSel.value = suc; sucSel.disabled = true; }
+  }
+
+  var url = SCRIPT_URL + '?tipo=historial_sdp';
+  if(suc)   url += '&sucursal=' + encodeURIComponent(suc);
+  if(desde) url += '&desde=' + encodeURIComponent(desde);
+  if(hasta) url += '&hasta=' + encodeURIComponent(hasta);
+  if(estado) url += '&estadoFiltro=' + encodeURIComponent(estado);
+
+  fetch(url)
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if(!data || !data.length){
+        lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--grey-txt);">No hay registros para los filtros seleccionados.</div>';
+        return;
+      }
+      histSdpRender(data);
+    })
+    .catch(function(){
+      lista.innerHTML = '<div style="text-align:center;padding:20px;color:#D4504A;">Error al cargar historial SDP.</div>';
+    });
+}
+
+function histSdpRender(rows){
+  var lista = document.getElementById('hsdp-lista');
+  var esAdmin = sesionActual && (sesionActual.rol === 'admin');
+  var esCedis = sesionActual && sesionActual.rol === 'cedis';
+
+  var h = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+  h += '<thead><tr style="background:var(--blue-dkr);">';
+  var cols = ['Folio','Fecha','Sucursal','Entrega requerida','# Productos','Total estimado','Estado','PDF'];
+  if(esAdmin) cols.push('Acciones');
+  cols.forEach(function(c){
+    h += '<th style="padding:9px 12px;color:rgba(255,255,255,.85);font-size:11px;text-align:left;white-space:nowrap;">' + c + '</th>';
+  });
+  h += '</tr></thead><tbody>';
+
+  rows.forEach(function(r, i){
+    var esCancelada = r.estado === 'CANCELADA';
+    var estadoColor = {EVALUADA:'#2E9E6B',PENDIENTE:'#E07B2A',VENCIDA:'#D4504A',CANCELADA:'#6B7E93'}[r.estado] || '#6B7E93';
+    var tipoColor = r.folio && r.folio.indexOf('-ASI') >= 0 ? '#3C8EC8' : r.folio && r.folio.indexOf('-EXT') >= 0 ? '#E07B2A' : '#2E9E6B';
+
+    h += '<tr style="background:' + (i%2===0?'#fff':'#f5f8fc') + ';border-top:1px solid var(--grey-lt);' + (esCancelada?'opacity:.55;':'') + '">';
+    h += '<td style="padding:8px 12px;white-space:nowrap;">';
+    h += '<span style="font-family:monospace;font-weight:700;color:var(--blue);">' + (r.folio||'') + '</span>';
+    if(r.folio && r.folio.indexOf('-ASI') >= 0) h += '<br><span style="font-size:10px;background:rgba(60,142,200,.12);color:#3C8EC8;padding:1px 6px;border-radius:8px;">ASI</span>';
+    else if(r.folio && r.folio.indexOf('-EXT') >= 0) h += '<br><span style="font-size:10px;background:rgba(224,123,42,.12);color:#E07B2A;padding:1px 6px;border-radius:8px;">EXT</span>';
+    else h += '<br><span style="font-size:10px;background:rgba(46,158,107,.12);color:#2E9E6B;padding:1px 6px;border-radius:8px;">ORD</span>';
+    h += '</td>';
+    h += '<td style="padding:8px 12px;white-space:nowrap;font-size:12px;">' + (r.fecha||'') + '</td>';
+    h += '<td style="padding:8px 12px;">' + (r.sucursal||'') + '</td>';
+    h += '<td style="padding:8px 12px;white-space:nowrap;font-size:12px;">' + (r.fechaEntrega||'') + '</td>';
+    h += '<td style="padding:8px 12px;text-align:center;">' + (r.numProductos||'—') + '</td>';
+    h += '<td style="padding:8px 12px;font-weight:600;color:var(--blue-dk);">' + (esCancelada ? '<span style="color:#6B7E93;">$0.00</span>' : (r.totalEstimado||'—')) + '</td>';
+    h += '<td style="padding:8px 12px;"><span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;background:' + estadoColor + '22;color:' + estadoColor + ';">' + (r.estado||'') + '</span></td>';
+    // PDF button - links to Drive file
+    h += '<td style="padding:8px 12px;">';
+    if(r.pdfUrl){
+      h += '<a href="' + r.pdfUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;background:var(--blue-lt);color:var(--blue);padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;text-decoration:none;border:1px solid rgba(60,142,200,.3);">&#128196; PDF</a>';
+    } else {
+      h += '<span style="font-size:11px;color:var(--grey-txt);">—</span>';
+    }
+    h += '</td>';
+    // Cancel button (admin only, not already cancelled or evaluated)
+    if(esAdmin){
+      h += '<td style="padding:8px 12px;">';
+      if(!esCancelada && r.estado !== 'EVALUADA'){
+        h += '<button onclick="conciliacionCancelarAbrir(' + JSON.stringify(r.folio) + ',' + JSON.stringify(r.sucursal) + ')" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid #D4504A;background:#fff;cursor:pointer;color:#D4504A;font-weight:600;">Cancelar</button>';
+      } else {
+        h += '<span style="font-size:11px;color:var(--grey-txt);">—</span>';
+      }
+      h += '</td>';
+    }
+    h += '</tr>';
+  });
+
+  h += '</tbody></table></div>';
+  lista.innerHTML = h;
+}
 </script>
 
 <!-- MOD4: HISTORIAL INVENTARIOS -->
@@ -3373,6 +3508,45 @@ function cargarCatalogoDinamico(cb) {
       <div style="text-align:center;padding:60px;color:var(--grey-txt);">Cargando estado del usuario...</div>
     </div>
   </div>
+</div>
+
+<!-- MOD7: HISTORIAL SDP -->
+<div class="module" id="mod7">
+<div class="wrap">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+      <div>
+        <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:4px;">Historial de Solicitudes de Pedido</h2>
+        <p style="font-size:13px;color:var(--grey-txt);">Registro de todas las SDP generadas. PDF disponible desde Drive.</p>
+      </div>
+      <button onclick="histSdpCargar()" style="background:var(--blue);color:#fff;padding:9px 18px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">&#8635; Actualizar</button>
+    </div>
+    <!-- Filtros -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:12px;margin-bottom:20px;align-items:end;">
+      <div class="field"><label>Sucursal</label>
+        <div class="sel-wrap"><select id="hsdp-suc">
+          <option value="">Todas</option>
+          <option value="ÁVILA CAMACHO">Ávila Camacho</option>
+          <option value="PASEO JARDINES">Paseo Jardines</option>
+          <option value="POSTRERÍA">Postrería</option>
+        </select></div>
+      </div>
+      <div class="field"><label>Desde</label><input type="date" id="hsdp-desde"></div>
+      <div class="field"><label>Hasta</label><input type="date" id="hsdp-hasta"></div>
+      <div class="field"><label>Estado</label>
+        <div class="sel-wrap"><select id="hsdp-estado">
+          <option value="">Todos</option>
+          <option value="PENDIENTE">Pendiente</option>
+          <option value="EVALUADA">Evaluada</option>
+          <option value="VENCIDA">Vencida</option>
+          <option value="CANCELADA">Cancelada</option>
+        </select></div>
+      </div>
+      <button onclick="histSdpCargar()" style="background:var(--blue);color:#fff;padding:9px 18px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">Buscar</button>
+    </div>
+    <div id="hsdp-lista"></div>
+  </div>
+</div>
 </div>
 </div><!-- end app-root -->
 <div id="inv-autosave-ind" style="position:fixed;bottom:20px;right:20px;background:rgba(46,158,107,.95);color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;z-index:99999;opacity:0;transition:opacity .6s;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.2);"></div>

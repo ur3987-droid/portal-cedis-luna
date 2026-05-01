@@ -1323,11 +1323,2238 @@ function setObs(code, val){
   pedido[code].obs = val;
 }
 
+
+function buildSummary(){
+  // ASI if CEDIS origin selected (by CEDIS role or Admin choosing CEDIS)
+  if(esCedisOrigen){
+    folioActual = 'SDP-' + Date.now().toString().slice(-6) + '-ASI';
+  } else {
+    // Determine Ordinaria or Extraordinaria based on fecha de entrega
+    var fechaEntregaEl = document.getElementById('fechaEntrega') || document.getElementById('delivDate');
+    var fechaEntregaVal = fechaEntregaEl ? fechaEntregaEl.value : '';
+    var esOrdinario = false;
+    if(fechaEntregaVal){
+      var fechaEnt = new Date(fechaEntregaVal + 'T12:00:00');
+      var diaEnt = fechaEnt.getDay();
+      esOrdinario = (diaEnt === 3 || diaEnt === 6); // Miercoles=3, Sabado=6
+    }
+    folioActual = 'SDP-' + Date.now().toString().slice(-6) + (esOrdinario ? '' : '-EXT');
+  }
+  var sucOrigen = document.getElementById('sucursal').value;
+  // If CEDIS origin, use destino as the actual sucursal for the order
+  var esCedisOrigen = sucOrigen === 'CEDIS';
+  var suc = esCedisOrigen ? (document.getElementById('sdp-destino').value || '') : sucOrigen;
+  if(esCedisOrigen && !suc){ alert('Selecciona la sucursal o area destino de la asignacion.'); return; }
+  const info = SUCURSALES[suc]||{};
+  const fecha = document.getElementById('fechaEntrega').value;
+  const obs = document.getElementById('obsGenerales').value;
+
+  document.getElementById('sv-folio').textContent = folioActual;
+  document.getElementById('sv-suc').textContent = suc;
+  document.getElementById('sv-ger').textContent = info.gerente||'—';
+  document.getElementById('sv-cor').textContent = info.correo||'—';
+  document.getElementById('sv-fecha').textContent = fmtDate(fecha);
+  document.getElementById('sv-obs').textContent = obs||'Sin observaciones generales';
+
+  const items = CATALOGO.filter(p=>pedido[p.code]&&pedido[p.code].qty>0);
+  let total = 0;
+  document.getElementById('summaryBody').innerHTML = items.map(p=>{
+    const qty = pedido[p.code].qty;
+    const sub = p.precio * qty;
+    total += sub;
+    return `<tr>
+      <td><code style="font-size:11px">${p.code}</code></td>
+      <td>${p.name}</td>
+      <td style="color:var(--grey-txt);font-size:12px">${p.pres}</td>
+      <td class="td-num">${p.precio>0?'$'+p.precio.toFixed(2):'—'}</td>
+      <td class="td-num">${qty}</td>
+      <td class="td-total">${p.precio>0?'$'+sub.toFixed(2):'—'}</td>
+      <td style="font-size:12px;color:var(--grey-txt)">${pedido[p.code].obs||'—'}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('summaryTotal').textContent = '$'+total.toFixed(2);
+}
+
+function fmtDate(d){
+  if(!d) return '—';
+  const [y,m,day]=d.split('-');
+  return day+'/'+m+'/'+y;
+}
+
+// ── SUBMIT ──
+function submitPedido(){
+  const suc = document.getElementById('sucursal').value;
+  const info = SUCURSALES[suc];
+  const items = CATALOGO.filter(p=>pedido[p.code]&&pedido[p.code].qty>0);
+  const total = items.reduce((s,p)=>s+(p.precio*(pedido[p.code].qty||0)),0);
+
+  const productosStr = items.map(p=>
+    `${p.code} | ${p.name} | ${p.pres} | $${p.precio.toFixed(2)} | x${pedido[p.code].qty} | $${(p.precio*pedido[p.code].qty).toFixed(2)} | ${pedido[p.code].obs||''}`
+  ).join('\n');
+
+  const payload = {
+    tipo        : 'pedido',
+    folio       : folioActual,
+    tipoSDP     : folioActual.indexOf('-ASI') >= 0 ? 'Asignacion' : (folioActual.indexOf('-EXT') >= 0 ? 'Extraordinaria' : 'Ordinaria'),
+    etiquetaGerente: (suc === 'Postrería' || suc === 'Postreria') ? 'Encargado' : 'Gerente',
+    timestamp   : new Date(Date.now()+3600000).toLocaleString('es-MX', {hour12:false}),
+    sucursal    : suc,
+    correoSuc   : info.correo,
+    gerente     : info.gerente,
+    fechaEntrega: fmtDate(document.getElementById('fechaEntrega').value),
+    obsGenerales: document.getElementById('obsGenerales').value,
+    productos   : productosStr,
+    totalEstimado: '$'+total.toFixed(2),
+    numProductos: items.length
+  };
+
+  // Iframe submit
+  const iframeName = 'sdp_iframe_'+Date.now();
+  const iframe = document.createElement('iframe');
+  iframe.name = iframeName;
+  iframe.style.display = 'none';
+  document.body.appendChild(iframe);
+
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = SCRIPT_URL;
+  form.target = iframeName;
+  Object.entries(payload).forEach(([k,v])=>{
+    const inp = document.createElement('input');
+    inp.type='hidden'; inp.name=k; inp.value=v;
+    form.appendChild(inp);
+  });
+  document.body.appendChild(form);
+
+  document.getElementById('loadingTxt').textContent = 'Enviando pedido a CEDIS…';
+  document.getElementById('loadingOverlay').classList.add('show');
+
+  iframe.onload = ()=>{
+    document.getElementById('loadingOverlay').classList.remove('show');
+    showSuccess(payload, items, total);
+    setTimeout(()=>{ form.remove(); iframe.remove(); },2000);
+  };
+  setTimeout(()=>{ document.getElementById('loadingOverlay').classList.remove('show'); showSuccess(payload,items,total); },5000);
+
+  form.submit();
+}
+
+function showSuccess(payload, items, total){
+  document.getElementById('mainWrap').style.display='none';
+  document.querySelector('.stepbar').style.display='none';
+  document.getElementById('successScreen').classList.add('visible');
+
+  document.getElementById('s-id-txt').textContent = payload.folio;
+  // Show tipo badge
+  var tipoBadge = document.getElementById('s-tipo-badge');
+  if(tipoBadge){
+    var esAsi = payload.folio.indexOf('-ASI') >= 0;
+    var esExt = payload.folio.indexOf('-EXT') >= 0;
+    if(esAsi){
+      tipoBadge.textContent = 'Asignacion CEDIS';
+      tipoBadge.style.background = 'rgba(126,200,227,.15)';
+      tipoBadge.style.color = '#3C8EC8';
+    } else if(esExt){
+      tipoBadge.textContent = 'Solicitud Extraordinaria';
+      tipoBadge.style.background = 'rgba(224,123,42,.15)';
+      tipoBadge.style.color = '#E07B2A';
+    } else {
+      tipoBadge.textContent = 'Solicitud Ordinaria';
+      tipoBadge.style.background = 'rgba(46,158,107,.1)';
+      tipoBadge.style.color = '#2E9E6B';
+    }
+  }
+  const now = new Date(Date.now()+3600000);
+  document.getElementById('s-time-txt').textContent =
+    now.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+
+    ' · '+now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',hour12:false});
+
+  // Build carátula
+  document.getElementById('car-folio').textContent = payload.folio;
+  document.getElementById('car-date').textContent = payload.timestamp;
+  document.getElementById('car-suc').textContent = payload.sucursal;
+  document.getElementById('car-cor').textContent = payload.correoSuc;
+  document.getElementById('car-ger').textContent = payload.gerente;
+  document.getElementById('car-fecha').textContent = payload.fechaEntrega;
+  document.getElementById('firma-ger').textContent = payload.gerente;
+  // Update Gerente/Encargado labels based on sucursal
+  var esPostCar = (payload.sucursal === 'Postrería' || payload.sucursal === 'Postreria');
+  var carLblGer = document.getElementById('car-lbl-ger');
+  if(carLblGer) carLblGer.textContent = esPostCar ? 'Encargado' : 'Gerente / Encargado';
+  var firmaRol = document.getElementById('firma-lbl-rol');
+  if(firmaRol) firmaRol.textContent = esPostCar ? 'Encargado de Area' : 'Gerente / Encargado de Sucursal';
+
+  let n=1;
+  document.getElementById('car-body').innerHTML = items.map(p=>{
+    const qty=pedido[p.code].qty;
+    const sub=p.precio*qty;
+    return `<tr>
+      <td>${n++}</td>
+      <td>${p.code}</td>
+      <td>${p.name}</td>
+      <td>${p.pres}</td>
+      <td class="num">${p.precio>0?'$'+p.precio.toFixed(2):'—'}</td>
+      <td class="num">${qty}</td>
+      <td class="num">${p.precio>0?'$'+sub.toFixed(2):'—'}</td>
+      <td>${pedido[p.code].obs||''}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('car-total').textContent = '$'+total.toFixed(2);
+
+  if(payload.obsGenerales){
+    document.getElementById('car-obs-block').style.display='block';
+    document.getElementById('car-obs-txt').textContent = payload.obsGenerales;
+  }
+
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function printCaratula(){
+  document.getElementById('caratula').classList.add('show');
+  setTimeout(()=>window.print(),300);
+}
+
+function resetPortal(){
+  pedido={};
+  currentScreen=1;
+  document.getElementById('mainWrap').style.display='block';
+  document.querySelector('.stepbar').style.display='block';
+  document.getElementById('successScreen').classList.remove('visible');
+  document.getElementById('caratula').classList.remove('show');
+  document.getElementById('sucursal').value='';
+  document.getElementById('correoSuc').value='';
+  document.getElementById('gerenteSuc').value='';
+  document.getElementById('fechaEntrega').value='';
+  document.getElementById('obsGenerales').value='';
+  document.getElementById('searchInput').value='';
+  activeCat='Todos';
+  for(let i=1;i<=3;i++){
+    document.getElementById('stp'+i).className='stp';
+    document.getElementById('sd'+i).textContent=i;
+  }
+  document.getElementById('stp1').classList.add('active');
+  document.getElementById('screen-1').classList.add('active');
+  document.getElementById('screen-2').classList.remove('active');
+  document.getElementById('screen-3').classList.remove('active');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+
+// ══ MODULE NAVIGATION ══
+function showMod(n) {
+  for (var i=1;i<=5;i++) {
+    var m=document.getElementById('mod'+i), t=document.getElementById('ntab'+i);
+    if(m) m.classList.remove('active');
+    if(t) t.classList.remove('active');
+  }
+  document.getElementById('mod'+n).classList.add('active');
+  document.getElementById('ntab'+n).classList.add('active');
+  window.scrollTo({top:0,behavior:'smooth'});
+  if(n===4) histCargar();
+  if(n===5) conciliacionCargar();
+}
+
+// ══ IFRAME POST helper ══
+function iframePost(url, data, cb) {
+  var iframeName = 'submit_iframe_' + Date.now();
+  var iframe = document.createElement('iframe');
+  iframe.name = iframeName;
+  iframe.style.display = 'none';
+  document.body.appendChild(iframe);
+
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = url;
+  form.target = iframeName;
+
+  Object.keys(data).forEach(function(k){
+    var inp = document.createElement('input');
+    inp.type = 'hidden';
+    inp.name = k;
+    inp.value = String(data[k]);
+    form.appendChild(inp);
+  });
+
+  document.body.appendChild(form);
+
+  iframe.onload = function(){
+    if(typeof loadingOverlay!='undefined') document.getElementById('loadingOverlay').classList.remove('show');
+    if(cb) cb();
+    setTimeout(function(){ form.remove(); iframe.remove(); }, 2000);
+  };
+
+  setTimeout(function(){
+    if(typeof loadingOverlay!='undefined') document.getElementById('loadingOverlay').classList.remove('show');
+    if(cb) cb();
+  }, 6000);
+
+  form.submit();
+}
+
+// ══ INVENTARIO ══
+var invConteo={},invSugerencias=[];
+var invAutosaveTimer = null;
+var INV_BORRADOR_KEY = 'lmc_inv_borrador';
+var INV_SUCS={'Ávila Camacho':{correo:'lunamediacentro@gmail.com',gerente:'Luis Enrique Velazquez Hernandez'},'Avila Camacho':{correo:'lunamediacentro@gmail.com',gerente:'Luis Enrique Velazquez Hernandez'},'Paseo Jardines':{correo:'lunamediapaseojardines@gmail.com',gerente:'Ingrid Arely Martinez Diaz'},'Postrería':{correo:'postrerialunamediacafe@gmail.com',gerente:'Eduardo Hernandez Cancela'},'Postreria':{correo:'postrerialunamediacafe@gmail.com',gerente:'Eduardo Hernandez Cancela'}};
+
+function invFill(){
+  var s = document.getElementById('inv-suc').value;
+  var info = INV_SUCS[s] || {};
+  var g = document.getElementById('inv-ger');
+  if(g) g.value = info.gerente || '';
+  // Update label
+  var lblGer = document.getElementById('lbl-gerente-inv');
+  if(lblGer) lblGer.textContent = (s === 'Postreria' || s === 'Postrería') ? 'Encargado' : 'Gerente';
+  if(!s) return;
+  // Set date and time automatically
+  var now = new Date(Date.now() + 3600000);
+  var dias = ['Domingo','Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'];
+  var diaNombre = dias[now.getDay()];
+  var fechaStr = now.toLocaleDateString('es-MX', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+  var horaStr = now.toLocaleTimeString('es-MX', {hour:'2-digit', minute:'2-digit', hour12:false});
+  var display = document.getElementById('inv-fecha-display');
+  if(display) display.value = fechaStr + ' · ' + horaStr;
+  var diaHidden = document.getElementById('inv-dia');
+  if(diaHidden) diaHidden.value = diaNombre;
+  var fechaHidden = document.getElementById('inv-fecha');
+  if(fechaHidden) fechaHidden.value = now.toISOString().split('T')[0];
+}
+function invStepbar(cur){for(var i=1;i<=3;i++){var s=document.getElementById('inv-st'+i),d=document.getElementById('inv-sd'+i);if(!s||!d)continue;s.className='stp';if(i<cur){s.classList.add('done');d.textContent='V';}else if(i===cur){s.classList.add('active');d.textContent=i;}else d.textContent=i;}}
+function invNext1(){
+  if(!document.getElementById('inv-suc').value){alert('Selecciona una sucursal.');return;}
+  // Check for existing draft
+  var suc = document.getElementById('inv-suc').value;
+  invCargarBorrador(suc, function(borrador){
+    if(borrador){
+      if(confirm('Hay un inventario en progreso guardado el ' + new Date(borrador.timestamp).toLocaleString('es-MX',{hour12:false}) + '. ¿Deseas continuar donde lo dejaste?')){
+        setTimeout(function(){ invRestaurarBorrador(borrador); }, 800);
+      } else {
+        invEliminarBorrador(suc);
+      }
+    }
+  });
+  // Publish mirror state
+  invPublicarEstado(suc, true);
+  // Start autosave
+  invIniciarAutosave();
+  
+document.getElementById('inv-p1').style.display='none';document.getElementById('inv-p2').style.display='block';invStepbar(2);invRender();window.scrollTo({top:0,behavior:'smooth'});}
+function invBack1(){document.getElementById('inv-p2').style.display='none';document.getElementById('inv-p1').style.display='block';invStepbar(1);window.scrollTo({top:0,behavior:'smooth'});}
+function invNext2(){document.getElementById('inv-p2').style.display='none';document.getElementById('inv-p3').style.display='block';invStepbar(3);invBuildSugerencias();window.scrollTo({top:0,behavior:'smooth'});}
+function invBack2(){document.getElementById('inv-p3').style.display='none';document.getElementById('inv-p2').style.display='block';invStepbar(2);window.scrollTo({top:0,behavior:'smooth'});}
+
+function invRender(){
+  var q = (document.getElementById('inv-search').value||'').toLowerCase();
+  var suc = document.getElementById('inv-suc').value;
+  var fl = CATALOGO.filter(function(p){
+    var matchQ = !q || p.name.toLowerCase().indexOf(q)>=0 || p.code.toLowerCase().indexOf(q)>=0;
+    var matchCat;
+    if(suc === 'Postreria' || suc === 'Postrería'){
+      matchCat = p.cat === 'POSTRERIA INSUMOS';
+    } else {
+      matchCat = p.cat !== 'POSTRERIA INSUMOS';
+    }
+    return matchCat && matchQ;
+  });
+  var bc = {}; fl.forEach(function(p){ if(!bc[p.cat])bc[p.cat]=[]; bc[p.cat].push(p); });
+  var h = '';
+  Object.keys(bc).forEach(function(cat){
+    var pr = bc[cat];
+    h += '<div style="margin-bottom:20px;">';
+    h += '<div style="font-family:Bebas Neue,sans-serif;font-size:18px;letter-spacing:.07em;color:var(--dark);padding:8px 0 6px;border-bottom:2px solid var(--blue-lt);margin-bottom:0;">' + cat + ' <span style="font-family:DM Sans,sans-serif;font-size:12px;font-weight:400;color:var(--grey-txt);">' + pr.length + ' productos</span></div>';
+    h += '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:0 0 12px 12px;overflow:hidden;">';
+    h += '<div style="display:grid;grid-template-columns:90px 1fr 140px 80px 100px;background:var(--blue-dkr);padding:8px 14px;gap:10px;">';
+    h += '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Codigo</div>';
+    h += '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Producto</div>';
+    h += '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Presentacion</div>';
+    h += '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Precio</div>';
+    h += '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Cantidad</div></div>';
+    pr.forEach(function(p){
+      var q2 = invConteo[p.code] !== undefined ? invConteo[p.code] : '';
+      var esCero = q2 === '' || q2 === undefined || parseFloat(q2) === 0 || isNaN(parseFloat(q2));
+      var bg = esCero ? 'background:#FEF5F5;' : 'background:#fff;';
+      h += '<div style="display:grid;grid-template-columns:90px 1fr 140px 80px 100px;padding:9px 14px;gap:10px;align-items:center;border-top:1px solid var(--grey-lt);' + bg + '">';
+      h += '<div style="font-size:11px;font-weight:700;color:var(--blue-dk);font-family:monospace;">' + p.code + '</div>';
+      h += '<div style="font-size:13px;color:var(--dark);">' + p.name + '</div>';
+      h += '<div style="font-size:11px;color:var(--grey-txt);">' + p.pres + '</div>';
+      h += '<div style="font-size:12px;font-weight:600;color:var(--blue-dk);">' + (p.precio > 0 ? '$' + p.precio.toFixed(2) : '') + '</div>';
+      h += '<div><input type="number" min="0" step="0.01" value="' + q2 + '" id="invq-' + p.code + '" data-code="' + p.code + '" onchange="invSet(this.dataset.code, this.value)" style="width:90px;padding:6px 10px;border:1.5px solid ' + (esCero ? '#D4504A' : 'var(--grey-mid)') + ';border-radius:7px;font-family:DM Sans,sans-serif;font-size:13px;font-weight:600;outline:none;text-align:right;"></div>';
+      h += '</div>';
+    });
+    // Subtotal por area
+    var catId = cat.replace(/[^a-zA-Z0-9]/g,'_');
+    h += '<div style="display:grid;grid-template-columns:90px 1fr 140px 80px 100px;padding:9px 14px;gap:10px;background:var(--blue-lt);border-top:2px solid var(--blue-mid);">';
+    h += '<div></div><div style="font-size:12px;font-weight:700;color:var(--blue-dkr);">SUBTOTAL ' + cat + '</div><div></div><div></div>';
+    h += '<div id="subtotal-' + catId + '" style="font-size:13px;font-weight:700;color:var(--blue-dkr);text-align:right;">0.00</div>';
+    h += '</div>';
+    h += '</div></div>';
+  });
+  // Total general
+  h += '<div style="background:var(--blue-dkr);border-radius:12px;padding:14px 18px;margin-top:8px;display:flex;justify-content:space-between;align-items:center;">';
+  h += '<div style="font-family:Bebas Neue,sans-serif;font-size:18px;letter-spacing:.07em;color:#fff;">TOTAL GENERAL INVENTARIO</div>';
+  h += '<div id="inv-total-general" style="font-family:Bebas Neue,sans-serif;font-size:22px;letter-spacing:.07em;color:#fff;">$0.00</div>';
+  h += '</div>';
+  document.getElementById('inv-catalog').innerHTML = h;
+  invUpdateTotals();
+}
+
+
+function invUpdateTotals(){
+  var total = 0;
+  var bycat = {};
+  CATALOGO.forEach(function(p){
+    var catId = p.cat.replace(/[^a-zA-Z0-9]/g,'_');
+    if(!bycat[catId]) bycat[catId] = 0;
+    var val = parseFloat(invConteo[p.code]) || 0;
+    var subtotal = val * (p.precio || 0);
+    bycat[catId] += subtotal;
+    total += subtotal;
+  });
+  Object.keys(bycat).forEach(function(catId){
+    var el = document.getElementById('subtotal-' + catId);
+    if(el) el.textContent = '$' + bycat[catId].toFixed(2);
+  });
+  var tel = document.getElementById('inv-total-general');
+  if(tel) tel.textContent = '$' + total.toFixed(2);
+}
+
+
+function invSet(c,v){
+  var val = parseFloat(v) || 0;
+  invConteo[c] = val;
+  var inp = document.getElementById('invq-' + c);
+  if(inp) inp.style.borderColor = val === 0 ? '#D4504A' : 'var(--grey-mid)';
+  invUpdateTotals();
+}
+
+function invBuildSugerencias(){
+  var suc = document.getElementById('inv-suc').value;
+  var cat = (CATALOGO && CATALOGO.length > 0) ? CATALOGO : (typeof CATALOGO_LOCAL !== 'undefined' ? CATALOGO_LOCAL : []);
+  // Usar mismo filtro que invRender
+  var catFiltrado = cat.filter(function(p){
+    if(suc === 'Postreria' || suc === 'Postrería') return p.cat === 'POSTRERIA INSUMOS';
+    return p.cat !== 'POSTRERIA INSUMOS';
+  });
+  var ceros = catFiltrado.filter(function(p){
+    var val = invConteo[p.code];
+    return val === undefined || val === '' || val === null || parseFloat(val) === 0 || isNaN(parseFloat(val));
+  });
+
+  var container = document.getElementById('inv-sugs');
+  if(!container) return;
+
+  if(!ceros.length){
+    container.innerHTML = '<div style="background:#E8F7F1;border:1px solid #2E9E6B;border-radius:12px;padding:20px;text-align:center;"><div style="font-size:15px;font-weight:600;color:#2E9E6B;">Todo el inventario tiene existencias.</div></div>';
+    return;
+  }
+
+  var bc = {};
+  ceros.forEach(function(p){ if(!bc[p.cat])bc[p.cat]=[]; bc[p.cat].push(p); });
+
+  var h = '<div style="background:#FEF3E8;border:1px solid #E07B2A;border-radius:12px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:#E07B2A;"><strong>' + ceros.length + ' productos</strong> con existencia en cero — se recomienda solicitarlos a CEDIS.</div>';
+
+  Object.keys(bc).forEach(function(cat){
+    var pr = bc[cat];
+    h += '<div style="margin-bottom:16px;">';
+    h += '<div style="font-family:Bebas Neue,sans-serif;font-size:18px;letter-spacing:.07em;color:var(--dark);padding:8px 0 6px;border-bottom:2px solid var(--blue-lt);margin-bottom:8px;">' + cat + '</div>';
+    h += '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:12px;overflow:hidden;">';
+    pr.forEach(function(p){
+      h += '<div style="display:flex;align-items:center;padding:10px 14px;border-bottom:1px solid var(--grey-lt);gap:12px;">';
+      h += '<div style="flex:1;"><div style="font-size:13px;font-weight:600;color:var(--dark);">' + p.name + '</div>';
+      h += '<div style="font-size:11px;color:var(--grey-txt);">' + p.code + ' — ' + p.pres + '</div></div>';
+      h += '<span style="background:#FEF5F5;color:#D4504A;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">Sin existencia</span>';
+      h += '</div>';
+    });
+    h += '</div></div>';
+  });
+
+  container.innerHTML = h;
+}
+
+function invSubmit(){
+  invEnvioTimestamp = Date.now(); // Marcar tiempo exacto al dar click en guardar
+  var suc = document.getElementById('inv-suc').value, info = INV_SUCS[suc]||{};
+  var cat = (CATALOGO && CATALOGO.length > 0) ? CATALOGO : (typeof CATALOGO_LOCAL !== 'undefined' ? CATALOGO_LOCAL : []);
+
+  // Build inventory data
+  var rows = cat.filter(function(p){
+    if(suc === 'Postreria' || suc === 'Postrería') return p.cat === 'POSTRERIA INSUMOS';
+    return p.cat !== 'POSTRERIA INSUMOS';
+  }).map(function(p){
+    var val = invConteo[p.code] !== undefined ? parseFloat(invConteo[p.code])||0 : 0;
+    return {code:p.code, name:p.name, pres:p.pres, cat:p.cat, precio:p.precio||0, cantidad:val, subtotal:val*(p.precio||0)};
+  });
+
+  var totalItems = rows.reduce(function(s,r){return s+r.cantidad;},0);
+  var totalCosto = rows.reduce(function(s,r){return s+r.subtotal;},0);
+  var folio = 'INV-' + (Date.now()+3600000).toString().slice(-6);
+  var fecha = new Date(Date.now()+3600000).toLocaleString('es-MX',{hour12:false});
+
+  document.getElementById('loadingOverlay').classList.add('show');
+  document.getElementById('loadingTxt').textContent = 'Generando PDF...';
+
+  // Generate PDF with jsPDF
+  try {
+    var doc = new window.jspdf.jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
+    var W = 210, margin = 12, y = 15;
+
+    // Header
+    doc.setFillColor(29,79,115);
+    doc.rect(0,0,W,28,'F');
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(18); doc.setFont('helvetica','bold');
+    doc.text('LUNA MEDIA CAFE - INVENTARIO', margin, 12);
+    doc.setFontSize(10); doc.setFont('helvetica','normal');
+    doc.text('Folio: ' + folio + '  |  ' + fecha, margin, 20);
+    doc.text('Sucursal: ' + suc + '  |  Gerente: ' + (info.gerente||'') + '  |  Dia: ' + document.getElementById('inv-dia').value, margin, 26);
+
+    y = 35;
+    doc.setTextColor(0,0,0);
+
+    var currentCat = '';
+    rows.forEach(function(r){
+      if(y > 270){ doc.addPage(); y = 15; }
+      if(r.cat !== currentCat){
+        currentCat = r.cat;
+        doc.setFillColor(29,79,115);
+        doc.rect(margin, y, W-margin*2, 7,'F');
+        doc.setTextColor(255,255,255);
+        doc.setFontSize(9); doc.setFont('helvetica','bold');
+        doc.text(currentCat.toUpperCase(), margin+2, y+5);
+        doc.setTextColor(0,0,0);
+        y += 9;
+      }
+      var bg = r.cantidad === 0 ? [254,245,245] : (rows.indexOf(r)%2===0?[245,248,252]:[255,255,255]);
+      doc.setFillColor(bg[0],bg[1],bg[2]);
+      doc.rect(margin, y, W-margin*2, 6,'F');
+      doc.setFontSize(7.5); doc.setFont('helvetica','normal');
+      doc.setTextColor(r.cantidad===0?180:0, r.cantidad===0?50:0, r.cantidad===0?50:0);
+      doc.text(r.code, margin+1, y+4.5);
+      doc.setTextColor(0,0,0);
+      doc.text(r.name.substring(0,45), margin+22, y+4.5);
+      doc.text(r.pres.substring(0,20), margin+110, y+4.5);
+      doc.text(r.cantidad.toFixed(2), margin+148, y+4.5, {align:'right'});
+      doc.text(r.precio>0?'$'+r.precio.toFixed(2):'', margin+165, y+4.5, {align:'right'});
+      doc.text(r.subtotal>0?'$'+r.subtotal.toFixed(2):'—', margin+185, y+4.5, {align:'right'});
+      y += 6.5;
+    });
+
+    // Totals
+    if(y > 260) {doc.addPage(); y=15;}
+    y += 4;
+    doc.setFillColor(235,244,251);
+    doc.rect(margin, y, W-margin*2, 12,'F');
+    doc.setFontSize(10); doc.setFont('helvetica','bold');
+    doc.text('TOTAL UNIDADES: ' + totalItems.toFixed(2), margin+4, y+5);
+    doc.text('COSTO TOTAL: $' + totalCosto.toFixed(2), margin+4, y+10);
+
+    // Convert to base64
+    var pdfBase64 = doc.output('datauristring').split(',')[1];
+
+    document.getElementById('loadingTxt').textContent = 'Enviando a CEDIS...';
+
+    // Send to Apps Script via iframe POST (only products with quantity > 0)
+    document.getElementById('loadingTxt').textContent = 'Enviando a correos...';
+    var conExistencia = rows.filter(function(r){ return r.cantidad > 0; });
+    var resumen = conExistencia.map(function(r){ return r.code+'|'+r.name+'|'+r.cantidad.toFixed(2)+'|$'+r.precio.toFixed(2); }).join(';');
+
+    function finalizarInv(){
+  // Stop autosave and publish mirror done
+  invDetenerAutosave();
+  var suc = document.getElementById('inv-suc') ? document.getElementById('inv-suc').value : '';
+  if(suc){ invEliminarBorrador(suc); invPublicarEstado(suc, false); }
+      invGuardarHistorial(folio, suc, fecha, totalItems, totalCosto, doc);
+      document.getElementById('loadingOverlay').classList.remove('show');
+      document.getElementById('inv-p3').style.display='none';
+      document.getElementById('inv-ok').style.display='block';
+      document.getElementById('inv-ok-id').textContent = folio;
+      var now = new Date(Date.now()+3600000);
+      document.getElementById('inv-ok-time').textContent = now.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) + ' - ' + now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',hour12:false});
+      window.scrollTo({top:0,behavior:'smooth'});
+      invMostrarSugereciasOk();
+    }
+
+    // Send inventory data WITHOUT pdfBase64 (too large, truncates payload)
+    // Build full conteo string: code|cantidad for all products
+    var conteoCompleto = cat.filter(function(p){
+      if(suc === 'Postreria' || suc === 'Postrería') return p.cat === 'POSTRERIA INSUMOS';
+      return p.cat !== 'POSTRERIA INSUMOS';
+    }).map(function(p){
+      var val = invConteo[p.code] !== undefined ? parseFloat(invConteo[p.code])||0 : 0;
+      return p.code + '|' + val.toFixed(2);
+    }).join(';');
+
+    iframePost(SCRIPT_URL, {
+      tipo: 'inventario',
+      timestamp: fecha,
+      dia: document.getElementById('inv-dia').value,
+      sucursal: suc,
+      gerente: info.gerente||'',
+      folio: folio,
+      totalItems: totalItems.toFixed(2),
+      totalCosto: totalCosto.toFixed(2),
+      resumen: resumen,
+      conteo: conteoCompleto
+    }, finalizarInv);
+
+  } catch(e) {
+    console.error('Error PDF:', e);
+    document.getElementById('loadingOverlay').classList.remove('show');
+    alert('Error generando PDF: ' + e.message);
+  }
+}
+
+// Historial de inventarios
+var invHistorial = [];
+var histFiltro = 'all';
+
+function invGuardarHistorial(folio, suc, fecha, totalItems, totalCosto, doc){
+  var pdfData = doc.output('datauristring');
+  var entrada = {folio:folio, sucursal:suc, fecha:fecha, dia:document.getElementById('inv-dia').value, totalItems:totalItems, totalCosto:totalCosto, pdfData:pdfData, timestamp:Date.now()};
+  // Keep in memory deduplicated
+  invHistorial = invHistorial.filter(function(i){ return i.folio !== folio; });
+  invHistorial.unshift(entrada);
+  // Save pdfData by folio in localStorage for persistence
+  try {
+    var pdfs = JSON.parse(localStorage.getItem('lmc_pdfs') || '{}');
+    pdfs[folio] = pdfData;
+    localStorage.setItem('lmc_pdfs', JSON.stringify(pdfs));
+  } catch(e) {
+    console.log('Error guardando PDF local:', e);
+  }
+}
+
+function histTab(suc){
+  histFiltro = suc;
+  var tabs = ['all','ac','pj','po'];
+  var keys = ['all','Avila Camacho','Paseo Jardines','Postreria'];
+  tabs.forEach(function(t,i){
+    var el = document.getElementById('htab-'+t);
+    if(!el) return;
+    if(keys[i]===suc||t===suc){
+      el.style.color='var(--blue)';
+      el.style.borderBottom='2px solid var(--blue)';
+      el.style.marginBottom='-2px';
+    } else {
+      el.style.color='var(--grey-txt)';
+      el.style.borderBottom='none';
+      el.style.marginBottom='0';
+    }
+  });
+  histRender();
+}
+
+function histCargar(){
+  document.getElementById('hist-loading').style.display='block';
+  document.getElementById('hist-list').innerHTML='';
+
+  // Todos cargan desde Drive
+  fetch(SCRIPT_URL + '?tipo=historial')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      // Load local PDFs from localStorage
+      var pdfs = {};
+      try { pdfs = JSON.parse(localStorage.getItem('lmc_pdfs') || '{}'); } catch(e){}
+      // Build from Drive, attaching local pdfData if available
+      invHistorial = data.map(function(d){
+        if(pdfs[d.folio]) d.pdfData = pdfs[d.folio];
+        return d;
+      });
+      invHistorial.sort(function(a,b){return (b.timestamp||0)-(a.timestamp||0);});
+      document.getElementById('hist-loading').style.display='none';
+      histRender();
+    })
+    .catch(function(){
+      document.getElementById('hist-loading').style.display='none';
+      histRender();
+    });
+}
+
+function histRender(){
+  var list = document.getElementById('hist-list');
+  if(!list) return;
+  var data = invHistorial;
+  if(sesionActual && sesionActual.rol === 'sucursal'){
+    var sucNorm = sesionActual.sucursal;
+    data = data.filter(function(i){
+      var iSuc = (i.sucursal||'').trim();
+      return iSuc === sucNorm || iSuc === sucNorm.normalize('NFD').replace(/[\u0300-\u036f]/g,'') || sucNorm.normalize('NFD').replace(/[\u0300-\u036f]/g,'') === iSuc.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    });
+  } else if(histFiltro!=='all'){
+    data = data.filter(function(i){return i.sucursal===histFiltro;});
+  }
+  if(!data.length){
+    list.innerHTML='<div style="text-align:center;padding:40px;color:var(--grey-txt);">No hay inventarios para esta sucursal.</div>';
+    return;
+  }
+  var h='<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:12px;overflow:hidden;">';
+  h+='<div style="display:grid;grid-template-columns:120px 150px 1fr 100px 80px;background:var(--blue-dkr);padding:10px 14px;gap:10px;">';
+  h+='<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Folio</div>';
+  h+='<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Sucursal</div>';
+  h+='<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Fecha</div>';
+  h+='<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Dia</div>';
+  h+='<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">PDF</div></div>';
+  data.forEach(function(inv){
+    h+='<div style="display:grid;grid-template-columns:120px 150px 1fr 100px 80px;padding:10px 14px;gap:10px;align-items:center;border-top:1px solid var(--grey-lt);">';
+    h+='<div style="font-family:monospace;font-size:12px;font-weight:700;color:var(--blue);">'+inv.folio+'</div>';
+    h+='<div style="font-size:13px;">'+inv.sucursal+'</div>';
+    h+='<div style="font-size:12px;color:var(--grey-txt);">'+inv.fecha+'</div>';
+    h+='<div style="font-size:12px;color:var(--grey-txt);">'+(inv.dia||'-')+'</div>';
+    if(inv.pdfData){
+      var rol = sesionActual ? sesionActual.rol : '';
+    var esAdmin = rol === 'admin' || rol === 'cedis';
+    var esMiSucursal = sesionActual && inv.sucursal === sesionActual.sucursal;
+    var tienePDF = inv.pdfData || inv.pdfUrl;
+    h+='<div style="display:flex;gap:6px;align-items:center;">';
+    if(esAdmin && tienePDF){
+      // Admin y CEDIS ven todos los PDFs
+      if(inv.pdfData){
+        h+='<button data-folio="'+inv.folio+'" onclick="histVerPDFBtn(this)" style="background:var(--blue);color:#fff;padding:5px 10px;border-radius:6px;border:none;font-size:11px;font-weight:600;cursor:pointer;">Ver PDF</button>';
+      } else {
+        h+='<a href="'+inv.pdfUrl+'" target="_blank" style="background:var(--blue);color:#fff;padding:5px 10px;border-radius:6px;text-decoration:none;font-size:11px;font-weight:600;">Ver PDF</a>';
+      }
+    } else if(!esAdmin && esMiSucursal && inv.pdfData){
+      // Sucursal solo ve su propio PDF si está en memoria local
+      h+='<button data-folio="'+inv.folio+'" onclick="histVerPDFBtn(this)" style="background:var(--blue);color:#fff;padding:5px 10px;border-radius:6px;border:none;font-size:11px;font-weight:600;cursor:pointer;">Ver PDF</button>';
+    } else if(!esAdmin){
+      h+='<span style="font-size:11px;color:var(--grey-txt);">No disponible</span>';
+    } else {
+      h+='<span style="font-size:11px;color:var(--grey-txt);">—</span>';
+    }
+    if(rol === 'admin'){
+      h+='<button data-folio="'+inv.folio+'" onclick="histEliminarBtn(this)" style="background:#D4504A;color:#fff;padding:5px 8px;border-radius:6px;border:none;font-size:11px;cursor:pointer;">&#128465;</button>';
+    }
+    h+='</div>';
+    } else if(inv.pdfUrl){
+      h+='<div><a href="'+inv.pdfUrl+'" target="_blank" style="background:var(--blue);color:#fff;padding:5px 10px;border-radius:6px;text-decoration:none;font-size:11px;font-weight:600;">Ver PDF</a></div>';
+    } else {
+      h+='<div style="font-size:11px;color:var(--grey-txt);">—</div>';
+    }
+    h+='</div>';
+  });
+  h+='</div>';
+  list.innerHTML=h;
+}
+
+function histVerPDFBtn(btn){
+  var folio = btn.dataset.folio;
+  var inv = invHistorial.find(function(i){return i.folio===folio;});
+  if(!inv||!inv.pdfData) return;
+  var win = window.open();
+  win.document.write('<iframe src="'+inv.pdfData+'" width="100%" height="100%" style="border:none;margin:0;padding:0;"></iframe>');
+}
+
+function invVerPDFBtn(btn){histVerPDFBtn(btn);}
+function invVerPDF(folio){
+  var inv = invHistorial.find(function(i){return i.folio===folio;});
+  if(!inv) return;
+  var win = window.open();
+  win.document.write('<iframe src="'+inv.pdfData+'" width="100%" height="100%" style="border:none;margin:0;padding:0;"></iframe>');
+}
+
+function invGenSDP(){
+  // Tomar productos con cantidad 0 del inventario actual
+  var ceros = CATALOGO.filter(function(p){
+    var val = invConteo[p.code];
+    return val === undefined || val === '' || parseFloat(val) === 0 || isNaN(parseFloat(val));
+  });
+
+  // Agregar al carrito de pedidos con qty=1 por defecto
+  ceros.forEach(function(p){
+    pedido[p.code] = {qty: 1, obs: 'Sugerencia de inventario'};
+  });
+
+  // Pasar sucursal
+  var suc = document.getElementById('inv-suc').value;
+  document.getElementById('sucursal').value = suc;
+  setSucursal();
+
+  // Ir directo al paso 3 (confirmar pedido)
+  showMod(1);
+  goScreen(3);
+}
+
+function invReset(){invConteo={};if(invCorrTimer)clearInterval(invCorrTimer);invSugerencias=[];document.getElementById('inv-ok').style.display='none';document.getElementById('inv-p1').style.display='block';document.getElementById('inv-p3').style.display='none';invStepbar(1);document.getElementById('inv-suc').value='';document.getElementById('inv-ger').value='';document.getElementById('inv-dia').value='';document.getElementById('inv-fecha').value=new Date().toISOString().split('T')[0];window.scrollTo({top:0,behavior:'smooth'});}
+
+// ══ EVALUACION ══
+var evFolioActual='',evProductos=[],evRecibidos={},evStarVal=0;
+var EV_SUCS={'Ávila Camacho':{correo:'lunamediacentro@gmail.com',gerente:'Luis Enrique Velazquez Hernandez'},'Avila Camacho':{correo:'lunamediacentro@gmail.com',gerente:'Luis Enrique Velazquez Hernandez'},'Paseo Jardines':{correo:'lunamediapaseojardines@gmail.com',gerente:'Ingrid Arely Martinez Diaz'},'Postrería':{correo:'postrerialunamediacafe@gmail.com',gerente:'Eduardo Hernandez Cancela'},'Postreria':{correo:'postrerialunamediacafe@gmail.com',gerente:'Eduardo Hernandez Cancela'}};
+
+function evStepbar(cur){for(var i=1;i<=5;i++){var s=document.getElementById('ev-st'+i),d=document.getElementById('ev-sd'+i);if(!s||!d)continue;s.className='stp';if(i<cur){s.classList.add('done');d.textContent='V';}else if(i===cur){s.classList.add('active');d.textContent=i;}else d.textContent=i;}}
+
+function evLoadPedidos(){
+  var suc=document.getElementById('ev-suc').value;if(!suc)return;
+  var info=EV_SUCS[suc]||{};var em=document.getElementById('ev-email');if(em)em.value=info.correo||'';
+  document.getElementById('ev-loading').style.display='block';document.getElementById('ev-pedidos-wrap').style.display='none';document.getElementById('ev-btn-cont').style.display='none';
+  fetch(SCRIPT_URL+'?tipo=pedidos_pendientes&sucursal='+encodeURIComponent(suc))
+    .then(function(r){return r.json();})
+    .then(function(ps){
+      document.getElementById('ev-loading').style.display='none';document.getElementById('ev-pedidos-wrap').style.display='block';
+      if(!ps.length){document.getElementById('ev-pedidos-list').innerHTML='<div style="background:#E8F7F1;border:1px solid #2E9E6B;border-radius:10px;padding:14px;font-size:13px;color:#2E9E6B;">No hay pedidos pendientes para esta sucursal.</div>';return;}
+      var h='';
+      ps.forEach(function(p){
+        var cl=p.hrsRestantes>24?'#2E9E6B':'#E07B2A';var bg=p.hrsRestantes>24?'#E8F7F1':'#FEF3E8';
+        h+='<div id="evp-'+p.folio+'" data-folio="'+p.folio+'" onclick="evSelectFolioBtn(this)" style="background:#fff;border:1.5px solid var(--grey-lt);border-radius:12px;padding:14px;margin-bottom:8px;cursor:pointer;transition:all .2s;">';
+        h+='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">';
+        h+='<div><div style="font-family:Bebas Neue,sans-serif;font-size:18px;letter-spacing:.08em;color:var(--blue);">'+p.folio+'</div>';
+        h+='<div style="font-size:12px;color:var(--grey-txt);">'+fmtFechaES(p.fecha)+' - '+p.numProductos+' productos - '+p.totalEstimado+'</div>';
+        h+='<div style="font-size:12px;color:var(--dark);">Entrega: <strong>'+fmtFechaCorta(p.fechaEntrega)+'</strong></div></div>';
+        h+='<span style="background:'+bg+';color:'+cl+';padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">'+p.hrsRestantes+'h restantes</span>';
+        h+='</div></div>';
+      });
+      document.getElementById('ev-pedidos-list').innerHTML=h;
+    })
+    .catch(function(){
+      document.getElementById('ev-loading').style.display='none';document.getElementById('ev-pedidos-wrap').style.display='block';
+      document.getElementById('ev-pedidos-list').innerHTML='<div style="background:#FEF3E8;border:1px solid #E07B2A;border-radius:10px;padding:14px;font-size:13px;color:#E07B2A;">Sin conexion al servidor. Usa el buscador manual.</div>';
+    });
+}
+
+function toggleEvidencia(){
+  var cal = document.querySelector('input[name="ev-calidad"]:checked');
+  var wrap = document.getElementById('evidencia-wrap');
+  if(!wrap) return;
+  if(cal && cal.value !== 'Empaques en buen estado'){
+    wrap.style.display='block';
+  } else {
+    wrap.style.display='none';
+    if(document.getElementById('ev-foto')) document.getElementById('ev-foto').value='';
+  }
+}
+function toggleEvidenciaEstado(){
+  var est = document.querySelector('input[name="ev-estado"]:checked');
+  var wrap = document.getElementById('evidencia-wrap');
+  if(!wrap) return;
+  if(est && est.value === 'Rechazado'){
+    wrap.style.display='block';
+  }
+}
+function evSelectFolioBtn(el){evSelectFolio(el.dataset.folio);}
+function fmtFechaES(str){if(!str)return '-';var d=new Date(str);if(isNaN(d))return str;return d.toLocaleString('es-MX',{weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});}
+function fmtFechaCorta(str){if(!str)return '-';var d=new Date(str);if(isNaN(d))return str;return d.toLocaleDateString('es-MX',{weekday:'short',day:'numeric',month:'short',year:'numeric'});}
+function evSelectFolio(f){
+  if(!f||f.length<4)return;evFolioActual=f;document.getElementById('ev-folio-input').value=f;
+  document.querySelectorAll('[id^="evp-"]').forEach(function(el){el.style.borderColor='var(--grey-lt)';el.style.background='#fff';});
+  var el=document.getElementById('evp-'+f);if(el){el.style.borderColor='var(--blue)';el.style.background='var(--blue-lt)';}
+  document.getElementById('ev-btn-cont').style.display='inline-flex';
+}
+
+function evLoadDetalle(){
+  if(!document.getElementById('ev-suc').value){alert('Selecciona una sucursal.');return;}
+  if(!document.getElementById('ev-email').value.includes('@')){alert('Ingresa un correo valido.');return;}
+  if(!evFolioActual){alert('Selecciona o busca un pedido para evaluar.');return;}
+  document.getElementById('loadingOverlay').classList.add('show');document.getElementById('loadingTxt').textContent='Cargando productos del pedido...';
+  fetch(SCRIPT_URL+'?tipo=detalle_pedido&folio='+encodeURIComponent(evFolioActual))
+    .then(function(r){return r.json();})
+    .then(function(ped){
+      document.getElementById('loadingOverlay').classList.remove('show');
+      if(ped.error){alert('Folio no encontrado: '+evFolioActual);return;}
+      if(ped.estado==='VENCIDA'){alert('Este folio ha vencido (mas de 72 hrs). Ya no es posible evaluarlo.');return;}
+      if(ped.estado==='EVALUADA'){alert('Este pedido ya fue evaluado anteriormente.');return;}
+      evCargarProductos(ped);
+      document.getElementById('ev-p1').style.display='none';document.getElementById('ev-p2').style.display='block';evStepbar(2);window.scrollTo({top:0,behavior:'smooth'});
+    })
+    .catch(function(){
+      document.getElementById('loadingOverlay').classList.remove('show');evProductos=[];evRecibidos={};
+      document.getElementById('ev-folio-show').textContent=evFolioActual;
+      document.getElementById('ev-ped-info').textContent='Sin conexion al servidor';
+      document.getElementById('ev-tiempo').textContent='-';
+      document.getElementById('ev-tot-orig').textContent='$0.00';document.getElementById('ev-tot-real').textContent='$0.00';
+      document.getElementById('ev-prods').innerHTML='<div style="padding:16px;text-align:center;color:var(--grey-txt);">Sin conexion. Verifica e intenta de nuevo.</div>';
+      document.getElementById('ev-p1').style.display='none';document.getElementById('ev-p2').style.display='block';evStepbar(2);window.scrollTo({top:0,behavior:'smooth'});
+    });
+}
+
+function evCargarProductos(ped){
+  evProductos=[];evRecibidos={};
+  var ls=(ped.productos||'').split('\n').filter(function(l){return l.trim();});
+  ls.forEach(function(l){var p=l.split('|');if(p.length<5)return;var code=(p[0]||'').trim(),nombre=(p[1]||'').trim(),pres=(p[2]||'').trim(),precio=parseFloat((p[3]||'0').replace('$','').replace(',',''))||0,qty=parseInt((p[4]||'1').replace('x',''))||1;evProductos.push({code:code,nombre:nombre,pres:pres,precio:precio,qty:qty});evRecibidos[code]={rec:true,qty:qty,precio:precio};});
+  document.getElementById('ev-folio-show').textContent=ped.folio;
+  document.getElementById('ev-ped-info').textContent=ped.sucursal+' - '+ped.numProductos+' productos - Entrega: '+ped.fechaEntrega;
+  var hrs=ped.hrsRestantes||0;var ti=document.getElementById('ev-tiempo');ti.textContent=hrs+'h restantes';ti.style.color=hrs>24?'#2E9E6B':'#E07B2A';
+  var orig=parseFloat((ped.totalEstimado||'0').replace('$','').replace(',',''))||0;
+  document.getElementById('ev-tot-orig').textContent='$'+orig.toFixed(2);
+  evRenderProds();evUpdateTotal();
+}
+function evRenderProds(){
+  if(!evProductos.length){document.getElementById('ev-prods').innerHTML='<div style="padding:16px;text-align:center;color:var(--grey-txt);">Sin productos en este pedido.</div>';return;}
+  var h='';
+  evProductos.forEach(function(p){
+    var rec=evRecibidos[p.code]?evRecibidos[p.code].rec:true;
+    var sub=p.precio*p.qty;
+    h+='<div style="display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid var(--grey-lt);gap:12px;'+(rec?'':'opacity:.5;background:#FEF5F5;')+'">';
+    h+='<input type="checkbox" '+(rec?'checked':'')+' data-code="'+p.code+'" onchange="evToggleChk(this)" style="width:18px;height:18px;accent-color:var(--blue);cursor:pointer;flex-shrink:0;">';
+    h+='<div style="flex:1;">';
+    h+='<div style="font-size:13px;font-weight:600;">'+p.nombre+'</div>';
+    h+='<div style="font-size:11px;color:var(--grey-txt);">'+p.code+' - '+p.pres+'</div>';
+    h+='</div>';
+    h+='<div style="text-align:right;flex-shrink:0;">';
+    h+='<div style="font-size:12px;color:var(--grey-txt);">x'+p.qty+'</div>';
+    h+='<div style="font-size:13px;font-weight:700;color:var(--blue-dk);">'+(p.precio>0?'$'+sub.toFixed(2):'-')+'</div>';
+    h+='</div>';
+    h+='<span style="background:'+(rec?'#E8F7F1':'#FEF5F5')+';color:'+(rec?'#2E9E6B':'#D4504A')+';padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">'+(rec?'Recibido':'Faltante')+'</span>';
+    h+='</div>';
+  });
+  document.getElementById('ev-prods').innerHTML=h;
+}
+
+function evToggleChk(chk){evToggle(chk.dataset.code, chk.checked);}
+function evToggle(code,rec){if(evRecibidos[code])evRecibidos[code].rec=rec;evRenderProds();evUpdateTotal();}
+function evSelAll(v){Object.keys(evRecibidos).forEach(function(c){evRecibidos[c].rec=v;});evRenderProds();evUpdateTotal();}
+function evUpdateTotal(){var t=0;Object.values(evRecibidos).forEach(function(i){if(i.rec)t+=i.precio*i.qty;});document.getElementById('ev-tot-real').textContent='$'+t.toFixed(2);}
+function evBack1(){document.getElementById('ev-p2').style.display='none';document.getElementById('ev-p1').style.display='block';evStepbar(1);window.scrollTo({top:0,behavior:'smooth'});}
+function evNext2(){document.getElementById('ev-p2').style.display='none';document.getElementById('ev-p3').style.display='block';evStepbar(3);window.scrollTo({top:0,behavior:'smooth'});}
+function evBack2(){document.getElementById('ev-p3').style.display='none';document.getElementById('ev-p2').style.display='block';evStepbar(2);window.scrollTo({top:0,behavior:'smooth'});}
+function evNext3(){if(!document.getElementById('ev-fecha').value){alert('Ingresa la fecha.');return;}if(!document.getElementById('ev-horaIn').value){alert('Ingresa la hora.');return;}if(!document.querySelector('input[name="ev-estado"]:checked')){alert('Selecciona el estado del pedido.');return;}document.getElementById('ev-p3').style.display='none';document.getElementById('ev-p4').style.display='block';evStepbar(4);window.scrollTo({top:0,behavior:'smooth'});}
+function evBack3(){document.getElementById('ev-p4').style.display='none';document.getElementById('ev-p3').style.display='block';evStepbar(3);window.scrollTo({top:0,behavior:'smooth'});}
+function evNext4(){if(!document.querySelector('input[name="ev-calidad"]:checked')){alert('Selecciona la calidad de empaques.');return;}if(!document.getElementById('ev-rating').value){alert('Asigna una puntuacion.');return;}document.getElementById('ev-p4').style.display='none';document.getElementById('ev-p5').style.display='block';evStepbar(5);evBuildSummary5();window.scrollTo({top:0,behavior:'smooth'});}
+function evBack4(){document.getElementById('ev-p5').style.display='none';document.getElementById('ev-p4').style.display='block';evStepbar(4);window.scrollTo({top:0,behavior:'smooth'});}
+
+function evStar(v){
+  evStarVal=v;document.getElementById('ev-rating').value=v;
+  var lbls=['','Deficiente','Regular','Aceptable','Bueno','Excelente!'];
+  document.getElementById('ev-star-lbl').textContent=lbls[v]+' ('+v+'/5)';
+  for(var i=1;i<=5;i++){var s=document.getElementById('ev-s'+i);if(s)s.style.color=i<=v?'#F5A623':'var(--grey-lt)';}
+}
+
+function evBuildSummary5(){
+  var suc=document.getElementById('ev-suc').value;
+  var fecha=document.getElementById('ev-fecha').value;
+  var hi=document.getElementById('ev-horaIn').value,ho=document.getElementById('ev-horaOut').value;
+  var est=(document.querySelector('input[name="ev-estado"]:checked')||{value:'-'}).value;
+  var cal=(document.querySelector('input[name="ev-calidad"]:checked')||{value:'-'}).value;
+  var fd=function(d){if(!d)return '-';var p=d.split('-');return p[2]+'/'+p[1]+'/'+p[0];};
+  document.getElementById('ev-sum-ped').innerHTML='<div class="ev-bhdr"><span>Pedido evaluado</span></div><div class="ev-row"><span class="ev-key">Folio SDP</span><span class="ev-val" style="font-family:Bebas Neue,sans-serif;font-size:16px;color:var(--blue);">'+evFolioActual+'</span></div><div class="ev-row"><span class="ev-key">Sucursal</span><span class="ev-val">'+suc+'</span></div><div class="ev-row"><span class="ev-key">Fecha</span><span class="ev-val">'+fd(fecha)+'</span></div><div class="ev-row"><span class="ev-key">Horario</span><span class="ev-val">'+hi+(ho?' - '+ho:'')+'</span></div><div class="ev-row"><span class="ev-key">Estado</span><span class="ev-val">'+est+'</span></div>';
+  var orig=0,real=0,rows='',recArr=[],faltArr=[];
+  evProductos.forEach(function(p){var rec=evRecibidos[p.code]?evRecibidos[p.code].rec:true;var sub=p.precio*p.qty;orig+=sub;if(rec){real+=sub;recArr.push(p.code+'-'+p.nombre);}else faltArr.push(p.code+'-'+p.nombre);rows+='<tr style="'+(rec?'':'opacity:.5;background:#FEF5F5;')+'"><td style="padding:9px 14px;font-size:13px;">'+p.nombre+'</td><td style="padding:9px 14px;font-size:11px;font-family:monospace;">'+p.code+'</td><td style="padding:9px 14px;text-align:right;">'+p.qty+'</td><td style="padding:9px 14px;text-align:right;font-weight:700;color:var(--blue-dk);">'+(p.precio>0?'$'+sub.toFixed(2):'-')+'</td><td style="padding:9px 14px;">'+(rec?'<span style="color:#2E9E6B;font-weight:700;">OK</span>':'<span style="color:#D4504A;font-weight:700;">Falta</span>')+'</td></tr>';});
+  document.getElementById('ev-sum-body').innerHTML=rows;
+  document.getElementById('ev-sum-orig').textContent='$'+orig.toFixed(2);
+  document.getElementById('ev-sum-real').textContent='$'+real.toFixed(2);
+  document.getElementById('ev-sum-cal').innerHTML='<div class="ev-bhdr"><span>Evaluacion</span></div><div class="ev-row"><span class="ev-key">Empaques</span><span class="ev-val">'+cal+'</span></div><div class="ev-row"><span class="ev-key">Puntuacion</span><span class="ev-val">'+evStarVal+'/5</span></div><div class="ev-row"><span class="ev-key">Comentarios</span><span class="ev-val" style="font-size:12px;font-style:italic;">'+(document.getElementById('ev-comentarios').value||'Sin comentarios')+'</span></div>';
+}
+
+function evSubmit(){
+  var suc=document.getElementById('ev-suc').value,info=EV_SUCS[suc]||{};
+  var orig=0,real=0,recArr=[],faltArr=[];
+  evProductos.forEach(function(p){var rec=evRecibidos[p.code]?evRecibidos[p.code].rec:true;var sub=p.precio*p.qty;orig+=sub;if(rec){real+=sub;recArr.push(p.code+'-'+p.nombre);}else faltArr.push(p.code+'-'+p.nombre);});
+  var payload={tipo:'evaluacion',folio:evFolioActual,timestamp:new Date(Date.now()+3600000).toLocaleString('es-MX', {hour12:false}),sucursal:suc,correoSuc:info.correo||document.getElementById('ev-email').value,gerente:info.gerente||'',fecha:document.getElementById('ev-fecha').value,horaEntrada:document.getElementById('ev-horaIn').value,horaSalida:document.getElementById('ev-horaOut').value,estado:(document.querySelector('input[name="ev-estado"]:checked')||{value:''}).value,calidad:(document.querySelector('input[name="ev-calidad"]:checked')||{value:''}).value,calificacion:document.getElementById('ev-rating').value,comentarios:document.getElementById('ev-comentarios').value,totalOriginal:'$'+orig.toFixed(2),totalReal:'$'+real.toFixed(2),productosRecibidos:recArr.join(';'),faltantes:faltArr.join(';')};
+  document.getElementById('loadingOverlay').classList.add('show');document.getElementById('loadingTxt').textContent='Guardando evaluacion...';
+  iframePost(SCRIPT_URL,payload,function(){
+    document.getElementById('ev-p5').style.display='none';document.getElementById('ev-ok').style.display='block';
+    document.getElementById('ev-ok-id').textContent=evFolioActual;
+    var now=new Date();document.getElementById('ev-ok-time').textContent=now.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+' - '+now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    window.scrollTo({top:0,behavior:'smooth'});
+  });
+}
+
+function evReset(){
+  evFolioActual='';evProductos=[];evRecibidos={};evStarVal=0;
+  document.getElementById('ev-ok').style.display='none';document.getElementById('ev-p1').style.display='block';document.getElementById('ev-p5').style.display='none';evStepbar(1);
+  document.getElementById('ev-suc').value='';document.getElementById('ev-email').value='';document.getElementById('ev-folio-input').value='';document.getElementById('ev-rating').value='';
+  document.getElementById('ev-star-lbl').textContent='Toca para calificar';
+  for(var i=1;i<=5;i++){var s=document.getElementById('ev-s'+i);if(s)s.style.color='var(--grey-lt)';}
+  document.querySelectorAll('input[name="ev-estado"],input[name="ev-calidad"]').forEach(function(r){r.checked=false;});
+  document.getElementById('ev-loading').style.display='none';document.getElementById('ev-pedidos-wrap').style.display='none';document.getElementById('ev-btn-cont').style.display='none';
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// Init INV fecha
+document.getElementById('inv-fecha').value=new Date().toISOString().split('T')[0];
+document.getElementById('ev-fecha').value=new Date().toISOString().split('T')[0];
+
+// Cargar catalogo dinamico al iniciar
+cargarCatalogoDinamico(function(){
+  console.log('Catalogo cargado: ' + CATALOGO.length + ' productos');
+});
+
+// ── INVENTARIO CORRECCIÓN ──
+var invCorrTimer = null;
+
+
+
+
+var invEnvioTimestamp = 0;
+var invCorrecciones = 0;
+
+
+
+// Timer para actualizar el botón de corrección
+var invCorrTimer = null;
+
+function invMostrarSugerencias(){
+  // Todos los productos no ingresados o con 0 se consideran en cero
+  var ceros = CATALOGO.filter(function(p){
+    var val = invConteo[p.code];
+    return val === undefined || val === '' || parseFloat(val) === 0;
+  });
+  var wrap = document.getElementById('inv-sugerencias-ok');
+  if(!wrap) return;
+  
+  // Mostrar boton SDP si hay productos en cero
+  var btnSdp = document.getElementById('inv-sdp-ok');
+  if(btnSdp) btnSdp.style.display = ceros.length > 0 ? 'inline-flex' : 'none';
+  
+  if(!ceros.length){
+    wrap.innerHTML = '<div style="background:#E8F7F1;border:1px solid #2E9E6B;border-radius:12px;padding:14px;font-size:13px;color:#2E9E6B;text-align:center;">Todo el inventario tiene existencias.</div>';
+    return;
+  }
+  var bycat = {};
+  ceros.forEach(function(p){ if(!bycat[p.cat])bycat[p.cat]=[]; bycat[p.cat].push(p); });
+  var h = '<div style="background:#FEF3E8;border:1px solid #E07B2A;border-radius:12px;padding:12px 16px;margin-bottom:12px;font-size:13px;color:#E07B2A;"><strong>' + ceros.length + ' productos</strong> con existencia en cero — se sugiere pedido.</div>';
+  Object.keys(bycat).forEach(function(cat){
+    h += '<div style="margin-bottom:12px;"><div style="font-family:Bebas Neue,sans-serif;font-size:16px;letter-spacing:.07em;color:var(--dark);border-bottom:1px solid var(--grey-lt);padding-bottom:4px;margin-bottom:6px;">' + cat + '</div>';
+    bycat[cat].forEach(function(p){
+      h += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--grey-lt);font-size:13px;"><span style="color:var(--dark);">' + p.name + '</span><span style="font-family:monospace;font-size:11px;color:var(--grey-txt);">' + p.code + '</span></div>';
+    });
+    h += '</div>';
+  });
+  wrap.innerHTML = h;
+}
+
+function invMostrarSugereciasOk(){
+  var cat = (CATALOGO && CATALOGO.length > 0) ? CATALOGO : (typeof CATALOGO_LOCAL !== 'undefined' ? CATALOGO_LOCAL : []);
+  var suc = document.getElementById('inv-suc').value;
+  var catFiltrado = cat.filter(function(p){
+    if(suc === 'Postreria' || suc === 'Postrería') return p.cat === 'POSTRERIA INSUMOS';
+    return p.cat !== 'POSTRERIA INSUMOS';
+  });
+  var ceros = catFiltrado.filter(function(p){
+    var val = invConteo[p.code];
+    return val === undefined || val === '' || val === null || parseFloat(val) === 0 || isNaN(parseFloat(val));
+  });
+  var wrap = document.getElementById('inv-sugerencias-ok');
+  if(!wrap) return;
+  if(!ceros.length){
+    wrap.innerHTML = '<div style="background:#E8F7F1;border:1px solid #2E9E6B;border-radius:12px;padding:14px;font-size:13px;color:#2E9E6B;text-align:center;">Todo el inventario tiene existencias.</div>';
+    return;
+  }
+  var bc = {};
+  ceros.forEach(function(p){ if(!bc[p.cat])bc[p.cat]=[]; bc[p.cat].push(p); });
+  var h = '<div style="background:#FEF3E8;border:1px solid #E07B2A;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#E07B2A;"><strong>' + ceros.length + ' productos</strong> con existencia en cero.</div>';
+  Object.keys(bc).forEach(function(cat){
+    var pr = bc[cat];
+    h += '<div style="margin-bottom:14px;">';
+    h += '<div style="font-family:Bebas Neue,sans-serif;font-size:16px;letter-spacing:.07em;color:var(--dark);border-bottom:1px solid var(--grey-lt);padding-bottom:4px;margin-bottom:6px;">' + cat + '</div>';
+    h += '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:10px;overflow:hidden;">';
+    pr.forEach(function(p, i){
+      h += '<div style="display:grid;grid-template-columns:80px 1fr 120px;padding:8px 12px;gap:8px;align-items:center;' + (i > 0 ? 'border-top:1px solid var(--grey-lt);' : '') + '">';
+      h += '<div style="font-size:11px;font-weight:700;color:var(--blue-dk);font-family:monospace;">' + p.code + '</div>';
+      h += '<div style="font-size:12px;color:var(--dark);">' + p.name + '</div>';
+      h += '<div style="font-size:11px;color:var(--grey-txt);">' + p.pres + '</div>';
+      h += '</div>';
+    });
+    h += '</div></div>';
+  });
+  wrap.innerHTML = h;
+}
+
+function invMostrarCeros(){
+  var cat = (CATALOGO && CATALOGO.length > 0) ? CATALOGO : (typeof CATALOGO_LOCAL !== 'undefined' ? CATALOGO_LOCAL : []);
+  var ceros = cat.filter(function(p){
+    var val = invConteo[p.code];
+    return val === undefined || val === '' || val === null || parseFloat(val) === 0 || isNaN(parseFloat(val));
+  });
+  var wrap = document.getElementById('inv-ceros-wrap');
+  var list = document.getElementById('inv-ceros-list');
+  if(!wrap || !list) return;
+  console.log('Ceros encontrados:', ceros.length, 'de', cat.length, 'productos');
+  if(!ceros.length){ wrap.style.display='none'; return; }
+  wrap.style.display = 'block';
+  var bycat = {};
+  ceros.forEach(function(p){ if(!bycat[p.cat])bycat[p.cat]=[]; bycat[p.cat].push(p); });
+  var h = '';
+  Object.keys(bycat).forEach(function(cat){
+    h += '<div style="margin-bottom:10px;"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#8B4A10;margin-bottom:4px;">' + cat + '</div>';
+    bycat[cat].forEach(function(p){
+      h += '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(224,123,42,.2);font-size:13px;"><span style="color:#182533;">' + p.name + '</span><span style="font-family:monospace;font-size:11px;color:#8B4A10;">' + p.code + '</span></div>';
+    });
+    h += '</div>';
+  });
+  h += '<div style="margin-top:10px;font-size:12px;color:#8B4A10;font-weight:600;">Total productos sin existencia: ' + ceros.length + '</div>';
+  list.innerHTML = h;
+}
+
+// ══ USUARIOS Y ROLES ══
+var USUARIOS = {
+  'lunamediacentro@gmail.com':      {pass:'Avilacamacho1',  rol:'sucursal', sucursal:'Ávila Camacho',  nombre:'Ávila Camacho'},
+  'lunamediapaseojardines@gmail.com':{pass:'Paseojardines2', rol:'sucursal', sucursal:'Paseo Jardines', nombre:'Paseo Jardines'},
+  'postrerialunamediacafe@gmail.com':{pass:'Postres3',       rol:'sucursal', sucursal:'Postrería',      nombre:'Postrería'},
+  'cedislunamediacafe@gmail.com':   {pass:'Cedis.245',      rol:'cedis',    sucursal:'',               nombre:'CEDIS'},
+  'lunamediacafedo@gmail.com':      {pass:'DO16mayo2025',   rol:'admin',    sucursal:'',               nombre:'Administrador'},
+  'ceo@lunamedicafe.com':           {pass:'Arnold2',        rol:'admin',    sucursal:'',               nombre:'CEO'}
+};
+
+var sesionActual = null;
+
+function loginSubmit(){
+  var email = document.getElementById('login-email').value.trim().toLowerCase();
+  var pass  = document.getElementById('login-pass').value;
+  var err   = document.getElementById('login-err');
+  var user  = USUARIOS[email];
+  if(!user || user.pass !== pass){
+    err.textContent = 'Correo o contraseña incorrectos.';
+    err.style.display = 'block';
+    return;
+  }
+  sesionActual = {email:email, rol:user.rol, sucursal:user.sucursal, nombre:user.nombre};
+  // Check if another session is already active for this user
+  fetch(SCRIPT_URL + '?tipo=sesion_check&email=' + encodeURIComponent(email))
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if(data && data.activa){
+        // Enter mirror/read-only mode
+        sesionEspejo = true;
+        sesionActual.modoLectura = true;
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('app-root').style.display = 'block';
+        aplicarRol();
+        espejoPollStart();
+        espejoMostrarBanner();
+      } else {
+        // Register session and enter normal mode
+        sesionEspejo = false;
+        sesionActual.modoLectura = false;
+        sesionRegistrar(email);
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('app-root').style.display = 'block';
+        aplicarRol();
+      }
+    })
+    .catch(function(){
+      // If check fails, proceed normally
+      sesionEspejo = false;
+      sesionActual.modoLectura = false;
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app-root').style.display = 'block';
+      aplicarRol();
+    });
+}
+
+function aplicarRol(){
+
+  var rol = sesionActual.rol;
+  // Show/hide limpiar button for admin only
+  var btnLimpiar = document.getElementById('btn-limpiar-hist');
+  if(btnLimpiar) btnLimpiar.style.display = rol === 'admin' ? 'inline-block' : 'none';
+  // Show/hide tabs based on role
+  // Admin tiene acceso universal a todas las pestanas presentes y futuras
+  var tabsPermitidos = {
+    'ntab4': ['admin','cedis','sucursal'],  // Historial
+    'ntab2': ['admin','sucursal'],           // Inventario
+    'ntab1': ['admin','cedis','sucursal'],   // Solicitud Pedido / Asignaciones
+    'ntab3': ['admin','sucursal'],           // Evaluacion
+    'ntab5': ['admin'],                      // Compras Conciliadas
+  };
+  Object.keys(tabsPermitidos).forEach(function(id){
+    var el = document.getElementById(id);
+    if(!el) return;
+    // Admin siempre ve todo
+    el.style.display = (rol === 'admin' || tabsPermitidos[id].indexOf(rol) >= 0) ? 'flex' : 'none';
+  });
+
+  // Auto-fill sucursal in SDP and INV if sucursal role
+  if(rol === 'sucursal'){
+    var suc = sesionActual.sucursal;
+    var sdpSel = document.getElementById('sucursal');
+    if(sdpSel){ sdpSel.value = suc; setSucursal(); sdpSel.disabled = true; }
+    var invSel = document.getElementById('inv-suc');
+    if(invSel){ invSel.value = suc; invFill(); invSel.disabled = true; }
+    var evSel = document.getElementById('ev-suc');
+    if(evSel){ evSel.value = suc; evSel.disabled = true; setTimeout(function(){ evLoadPedidos(); }, 300); }
+  }
+
+  // For CEDIS and Admin: show CEDIS option in sucursal select
+  var optCedis = document.getElementById('opt-cedis');
+  if(optCedis) optCedis.style.display = (rol === 'cedis' || rol === 'admin') ? 'block' : 'none';
+
+  // For CEDIS: auto-select CEDIS and show destino
+  if(rol === 'cedis'){
+    var sdpSel = document.getElementById('sucursal');
+    if(sdpSel){ sdpSel.disabled = false; sdpSel.value = 'CEDIS'; setSucursal(); }
+  }
+
+  // Mirror mode: show read-only view
+  if(sesionEspejo){
+    espejoBloquear();
+    // Hide all tabs and modules, show mirror view
+    document.querySelectorAll('.ntab').forEach(function(t){ t.style.display='none'; });
+    document.querySelectorAll('.module').forEach(function(m){ m.classList.remove('active'); });
+    var ev = document.getElementById('espejo-view');
+    if(ev) ev.style.display='block';
+    espejoPollStart();
+    return;
+  }
+
+  // Show first available tab
+  if(rol === 'cedis'){
+    showMod(4);
+  } else {
+    showMod(rol === 'admin' ? 4 : 1);
+  }
+
+  // Update header with user name
+  var hdrTitle = document.querySelector('.hdr-title');
+  if(hdrTitle) hdrTitle.innerHTML = '<small>Sistema de pedidos</small> Portal SDP <span style="font-size:12px;opacity:.7;margin-left:8px;">| ' + sesionActual.nombre + '</span>';
+}
+
+function cerrarSesion(){
+  sesionActual = null;
+  document.getElementById('app-root').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('login-email').value = '';
+  document.getElementById('login-pass').value = '';
+  document.getElementById('login-err').style.display = 'none';
+}
+
+
+
+function histLimpiar(){
+  if(!sesionActual || sesionActual.rol !== 'admin') return;
+  if(!confirm('Borrar TODOS los inventarios del historial? Esta accion no se puede deshacer.')) return;
+  // Limpiar Drive via Apps Script
+  fetch(SCRIPT_URL + '?tipo=historial_limpiar')
+    .then(function(){ })
+    .catch(function(){ });
+  // Limpiar local
+  try { localStorage.removeItem('lmc_historial'); localStorage.removeItem('lmc_pdfs'); } catch(e){}
+  invHistorial = [];
+  histRender();
+  alert('Historial limpiado correctamente.');
+}
+
+function histEliminarBtn(btn){
+  var folio = btn.dataset.folio;
+  if(!confirm('Eliminar el inventario ' + folio + ' del historial?')) return;
+  // Remove from memory
+  invHistorial = invHistorial.filter(function(i){ return i.folio !== folio; });
+  // Remove from localStorage
+  try {
+    var stored = localStorage.getItem('lmc_historial');
+    var data = stored ? JSON.parse(stored) : [];
+    data = data.filter(function(i){ return i.folio !== folio; });
+    localStorage.setItem('lmc_historial', JSON.stringify(data));
+  } catch(e) { console.log('Error:', e); }
+  histRender();
+}
+
+function setSucursalDestino(){
+  var destino = document.getElementById('sdp-destino').value;
+  if(!destino) return;
+  var esPost = (destino === 'Postrería' || destino === 'Postreria');
+  // Update labels for destino
+  var lblCar = document.getElementById('car-lbl-ger');
+  if(lblCar) lblCar.textContent = esPost ? 'Encargado' : 'Gerente / Encargado';
+  var lblFirma = document.getElementById('firma-lbl-rol');
+  if(lblFirma) lblFirma.textContent = esPost ? 'Encargado de Area' : 'Gerente / Encargado de Sucursal';
+  // Update correoSuc and gerente fields with destino info
+  var info = SUCURSALES[destino] || {};
+  var correoEl = document.getElementById('correoSuc');
+  var gerenteEl = document.getElementById('gerenteSuc');
+  if(correoEl) correoEl.value = info.correo || '';
+  if(gerenteEl) gerenteEl.value = info.gerente || '';
+}
+
+// ══ PROVEEDORES ══
+var PROVEEDORES_DATA = [];
+
+var CEDIS_COLS_EXTRA = {
+  'cedis_proveedores': ['Nombre','Contacto','Telefono','Correo','Categoria que surte','Productos que surte','Estado','Direccion','Notas','Timestamp']
+};
+
+function provGuardar(){
+  var ts = new Date(Date.now()+3600000).toLocaleString('es-MX',{hour12:false});
+  var row = [
+    document.getElementById('prov-nombre').value,
+    document.getElementById('prov-contacto').value,
+    document.getElementById('prov-tel').value,
+    document.getElementById('prov-correo').value,
+    document.getElementById('prov-categoria').value,
+    document.getElementById('prov-productos').value,
+    document.getElementById('prov-estado').value,
+    document.getElementById('prov-dir').value,
+    document.getElementById('prov-notas').value,
+    ts
+  ];
+  if(!row[0]){ alert('Ingresa el nombre del proveedor.'); return; }
+  iframePost(SCRIPT_URL, {
+    tipo: 'cedis_proveedores',
+    modulo: 'proveedores',
+    datos: JSON.stringify(row),
+    columnas: JSON.stringify(CEDIS_COLS_EXTRA['cedis_proveedores'])
+  }, function(){
+    cedisHideForm('proveedores');
+    ['prov-nombre','prov-contacto','prov-tel','prov-correo','prov-productos','prov-dir','prov-notas'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+    provCargar();
+  });
+}
+
+function provCargar(){
+  fetch(SCRIPT_URL+'?tipo=cedis_list&modulo=proveedores')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      PROVEEDORES_DATA = data || [];
+      // Populate datalist for catalogo
+      var dl = document.getElementById('cat-prov-list');
+      if(dl){ dl.innerHTML=''; PROVEEDORES_DATA.forEach(function(p){ var opt=document.createElement('option'); opt.value=p[0]; dl.appendChild(opt); }); }
+      provRender(PROVEEDORES_DATA);
+    }).catch(function(){ provRender([]); });
+}
+
+function provFiltrar(){
+  var q = document.getElementById('prov-buscar').value.toLowerCase();
+  var filtered = PROVEEDORES_DATA.filter(function(p){ return !q || (p[0]||'').toLowerCase().indexOf(q)>=0 || (p[4]||'').toLowerCase().indexOf(q)>=0; });
+  provRender(filtered);
+}
+
+function provRender(data){
+  var list = document.getElementById('proveedores-list');
+  if(!list) return;
+  if(!data.length){ list.innerHTML='<p style="text-align:center;padding:30px;color:var(--grey-txt);font-size:13px;">No hay proveedores registrados.</p>'; return; }
+  var h='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;">';
+  data.forEach(function(p){
+    var activo = p[5]==='Activo';
+    h+='<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:12px;padding:16px;border-left:4px solid '+(activo?'var(--blue)':'#C5D3E0')+'">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">';
+    h+='<div style="font-size:15px;font-weight:700;color:var(--dark);">'+(p[0]||'')+'</div>';
+    h+='<span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;background:'+(activo?'rgba(46,158,107,.12)':'rgba(197,211,224,.3)')+';color:'+(activo?'#2E9E6B':'#6B7E93')+'">'+(p[5]||'')+'</span>';
+    h+='</div>';
+    h+='<div style="font-size:12px;color:var(--grey-txt);margin-bottom:4px;">&#128101; '+(p[1]||'—')+'</div>';
+    h+='<div style="font-size:12px;color:var(--grey-txt);margin-bottom:4px;">&#128222; '+(p[2]||'—')+'</div>';
+    h+='<div style="font-size:12px;color:var(--blue);margin-bottom:4px;">&#9993; '+(p[3]||'—')+'</div>';
+    h+='<div style="font-size:11px;color:var(--grey-txt);margin-top:8px;padding-top:8px;border-top:1px solid var(--grey-lt);">&#128230; Categoria: '+(p[4]||'—')+'</div>';
+    if(p[5]) h+='<div style="font-size:11px;color:var(--grey-txt);margin-top:4px;">&#128204; Productos: '+(p[5])+'</div>';
+    if(p[7]) h+='<div style="font-size:11px;color:var(--grey-txt);margin-top:4px;font-style:italic;">'+(p[7])+'</div>';
+    h+='</div>';
+  });
+  h+='</div>';
+  list.innerHTML=h;
+}
+
+// ══ CATALOGO CEDIS ══
+var CATALOGO_CEDIS = [];
+var CAT_PREFIJOS = {
+  'BARRA': 'B', 'COCINA': 'C', 'SALON-LOBBY': 'SL',
+  'POSTRERIA INSUMOS': 'IR', 'POSTRERIA PRODUCTO TERMINADO': 'RPT'
+};
+var CAT_INICIO = {
+  'BARRA': 102, 'COCINA': 104, 'SALON-LOBBY': 30,
+  'POSTRERIA INSUMOS': 31, 'POSTRERIA PRODUCTO TERMINADO': 10
+};
+
+function catShowForm(){
+  document.getElementById('cat-form').style.display='block';
+  // Load proveedores for datalist
+  provCargar();
+}
+function catHideForm(){
+  document.getElementById('cat-form').style.display='none';
+  ['cat-nombre','cat-pres','cat-precio','cat-proveedor','cat-descripcion','cat-codigo'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+  var catEl = document.getElementById('cat-categoria'); if(catEl) catEl.value='';
+}
+
+function catGenerarCodigo(){
+  var cat = document.getElementById('cat-categoria').value;
+  if(!cat) return;
+  var prefix = CAT_PREFIJOS[cat] || 'X';
+  // Count existing products in this category from loaded catalog
+  var existing = CATALOGO_CEDIS.filter(function(p){ return p[0]===cat; });
+  var base = CAT_INICIO[cat] || 0;
+  var next = base + existing.length + 1;
+  var pad = prefix==='RPT' ? 4 : (prefix==='SL'||prefix==='IR' ? 4 : 4);
+  var codigo = prefix + String(next).padStart(pad,'0');
+  document.getElementById('cat-codigo').value = codigo;
+}
+
+function catGuardar(){
+  var ts = new Date(Date.now()+3600000).toLocaleString('es-MX',{hour12:false});
+  var row = [
+    document.getElementById('cat-categoria').value,
+    document.getElementById('cat-codigo').value,
+    document.getElementById('cat-nombre').value,
+    document.getElementById('cat-pres').value,
+    parseFloat(document.getElementById('cat-precio').value)||0,
+    document.getElementById('cat-proveedor').value,
+    document.getElementById('cat-descripcion').value,
+    document.getElementById('cat-estado').value,
+    ts
+  ];
+  if(!row[0]){ alert('Selecciona la categoria.'); return; }
+  if(!row[2]){ alert('Ingresa el nombre del producto.'); return; }
+  if(!row[1]){ alert('Genera el codigo primero seleccionando la categoria.'); return; }
+
+  iframePost(SCRIPT_URL, {
+    tipo: 'cedis_catalogo',
+    modulo: 'catalogo',
+    datos: JSON.stringify(row),
+    columnas: JSON.stringify(['Categoria','Codigo','Nombre','Presentacion','Precio','Proveedor','Descripcion','Estado','Timestamp'])
+  }, function(){
+    catHideForm();
+    catCargar();
+  });
+}
+
+function catCargar(){
+  fetch(SCRIPT_URL+'?tipo=cedis_list&modulo=catalogo')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      CATALOGO_CEDIS = data || [];
+      // Also update global CATALOGO for SDP and inventory
+      // Only active products, format: {code, name, pres, precio, cat}
+      var activos = CATALOGO_CEDIS.filter(function(p){ return p[7]==='Activo'; });
+      if(activos.length > 0){
+        CATALOGO = activos.map(function(p){ return {cat:p[0], code:p[1], name:p[2], pres:p[3], precio:parseFloat(p[4])||0}; });
+      }
+      catFiltrar();
+    }).catch(function(){ catFiltrar(); });
+}
+
+function catFiltrar(){
+  var q = (document.getElementById('cat-buscar').value||'').toLowerCase();
+  var catF = document.getElementById('cat-filtro-cat').value;
+  var estF = document.getElementById('cat-filtro-estado').value;
+  var esCedisAdmin = sesionActual && (sesionActual.rol==='cedis'||sesionActual.rol==='admin');
+  var data = CATALOGO_CEDIS.filter(function(p){
+    var matchQ = !q || (p[2]||'').toLowerCase().indexOf(q)>=0 || (p[1]||'').toLowerCase().indexOf(q)>=0;
+    var matchCat = !catF || p[0]===catF;
+    var matchEst = !estF || p[7]===estF;
+    return matchQ && matchCat && matchEst;
+  });
+  catRender(data, esCedisAdmin);
+}
+
+function catRender(data, mostrarGestion){
+  var list = document.getElementById('catalogo-list');
+  if(!list) return;
+  if(!data.length){ list.innerHTML='<p style="text-align:center;padding:30px;color:var(--grey-txt);font-size:13px;">No hay productos. Agrega el primero.</p>'; return; }
+
+  var catActual='';
+  var h='';
+  data.forEach(function(p){
+    if(p[0]!==catActual){
+      catActual=p[0];
+      h+='<div style="background:var(--blue-dkr);color:#fff;padding:8px 14px;border-radius:8px;font-family:Bebas Neue,sans-serif;font-size:16px;letter-spacing:.07em;margin:16px 0 8px;">'+catActual+'</div>';
+    }
+    var activo = p[7]==='Activo';
+    h+='<div style="display:grid;grid-template-columns:90px 1fr 140px 80px'+(mostrarGestion?' 140px 80px 80px':'')+';gap:10px;align-items:center;padding:9px 12px;background:'+(activo?'#fff':'#f9f9f9')+';border:1px solid var(--grey-lt);border-radius:8px;margin-bottom:4px;opacity:'+(activo?'1':'.55')+'">';
+    h+='<div style="font-family:monospace;font-size:12px;font-weight:700;color:var(--blue);">'+(p[1]||'')+'</div>';
+    h+='<div><div style="font-size:13px;font-weight:600;color:var(--dark);">'+(p[2]||'')+'</div><div style="font-size:11px;color:var(--grey-txt);">'+(p[3]||'')+'</div></div>';
+    h+='<div style="font-size:14px;font-weight:700;color:var(--blue-dk);">$'+(parseFloat(p[4])||0).toFixed(2)+'</div>';
+    h+='<div style="font-size:11px;color:var(--grey-txt);">'+(p[3]||'')+'</div>';
+    if(mostrarGestion){
+      h+='<div style="font-size:11px;color:var(--grey-txt);">'+(p[5]||'—')+'</div>';
+      h+='<span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;background:'+(activo?'rgba(46,158,107,.12)':'rgba(212,80,74,.1)')+';color:'+(activo?'#2E9E6B':'#D4504A')+'">'+(p[7]||'')+'</span>';
+      h+='<button onclick="catToggleEstado('+JSON.stringify(p[1])+')" style="font-size:10px;padding:3px 8px;border-radius:6px;border:1px solid var(--grey-lt);background:#fff;cursor:pointer;color:var(--grey-txt);">'+(activo?'Desactivar':'Activar')+'</button>';
+    }
+    h+='</div>';
+  });
+  list.innerHTML=h;
+}
+
+function catToggleEstado(codigo){
+  var prod = CATALOGO_CEDIS.find(function(p){ return p[1]===codigo; });
+  if(!prod) return;
+  var nuevoEstado = prod[7]==='Activo' ? 'Inactivo' : 'Activo';
+  iframePost(SCRIPT_URL, {
+    tipo: 'cedis_catalogo_estado',
+    codigo: codigo,
+    estado: nuevoEstado
+  }, function(){
+    catCargar();
+  });
+}
+
+function catEditAbrir(codigo){
+  var prod = CATALOGO_CEDIS.find(function(p){ return p[1]===codigo; });
+  if(!prod) return;
+  document.getElementById('cat-edit-codigo-orig').value = prod[1];
+  document.getElementById('cat-edit-codigo').value = prod[1];
+  document.getElementById('cat-edit-categoria').value = prod[0];
+  document.getElementById('cat-edit-nombre').value = prod[2];
+  document.getElementById('cat-edit-pres').value = prod[3];
+  document.getElementById('cat-edit-precio').value = prod[4];
+  document.getElementById('cat-edit-proveedor').value = prod[5]||'';
+  document.getElementById('cat-edit-desc').value = prod[6]||'';
+  document.getElementById('cat-edit-estado').value = prod[7]||'Activo';
+  var modal = document.getElementById('cat-edit-modal');
+  modal.style.display = 'flex';
+}
+
+function catEditCancelar(){
+  document.getElementById('cat-edit-modal').style.display = 'none';
+}
+
+function catEditGuardar(){
+  var codigoOrig = document.getElementById('cat-edit-codigo-orig').value;
+  var row = [
+    document.getElementById('cat-edit-categoria').value,
+    document.getElementById('cat-edit-codigo').value,
+    document.getElementById('cat-edit-nombre').value,
+    document.getElementById('cat-edit-pres').value,
+    parseFloat(document.getElementById('cat-edit-precio').value)||0,
+    document.getElementById('cat-edit-proveedor').value,
+    document.getElementById('cat-edit-desc').value,
+    document.getElementById('cat-edit-estado').value,
+    new Date(Date.now()+3600000).toLocaleString('es-MX',{hour12:false})
+  ];
+  if(!row[2]){ alert('El nombre no puede estar vacio.'); return; }
+  iframePost(SCRIPT_URL, {
+    tipo: 'cedis_catalogo_editar',
+    codigoOrig: codigoOrig,
+    datos: JSON.stringify(row)
+  }, function(){
+    catEditCancelar();
+    catCargar();
+  });
+}
+
+function cargarExistenciaInventario(sucursal, cb){
+  INVENTARIO_EXISTENCIA = {};
+  fetch(SCRIPT_URL + '?tipo=inventario_existencia&sucursal=' + encodeURIComponent(sucursal))
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if(data && data.conteo){
+        data.conteo.split(';').forEach(function(item){
+          var parts = item.split('|');
+          if(parts[0]) INVENTARIO_EXISTENCIA[parts[0]] = parseFloat(parts[1])||0;
+        });
+      }
+      if(cb) cb();
+    })
+    .catch(function(){ if(cb) cb(); });
+}
+
+// ══ BORRADOR INVENTARIO — AUTOSAVE ══
+function invGuardarBorrador(){
+  var suc = document.getElementById('inv-suc') ? document.getElementById('inv-suc').value : '';
+  if(!suc || !sesionActual) return;
+  var borrador = {
+    sucursal: suc,
+    gerente: document.getElementById('inv-ger') ? document.getElementById('inv-ger').value : '',
+    dia: document.getElementById('inv-dia') ? document.getElementById('inv-dia').value : '',
+    timestamp: Date.now(),
+    conteo: invConteo
+  };
+  // Save to Drive via Apps Script (non-blocking)
+  try {
+    var key = 'borrador_' + suc.replace(/[^a-zA-Z]/g,'_');
+    fetch(SCRIPT_URL + '?tipo=borrador_save&sucursal=' + encodeURIComponent(suc) + '&datos=' + encodeURIComponent(JSON.stringify(borrador)))
+      .catch(function(){});
+  } catch(e){}
+}
+
+function invIniciarAutosave(){
+  invDetenerAutosave();
+  invAutosaveTimer = setInterval(function(){
+    invGuardarBorrador();
+    invMostrarIndicadorSave();
+  }, 300000); // cada 5 minutos
+}
+
+function invDetenerAutosave(){
+  if(invAutosaveTimer){ clearInterval(invAutosaveTimer); invAutosaveTimer = null; }
+}
+
+function invMostrarIndicadorSave(){
+  var ind = document.getElementById('inv-autosave-ind');
+  if(!ind) return;
+  ind.textContent = '✓ Guardado automaticamente ' + new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+  ind.style.opacity = '1';
+  setTimeout(function(){ ind.style.opacity = '0'; }, 3000);
+}
+
+function invCargarBorrador(suc, cb){
+  fetch(SCRIPT_URL + '?tipo=borrador_get&sucursal=' + encodeURIComponent(suc))
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if(data && data.conteo && data.timestamp){
+        var hace24hrs = Date.now() - (24 * 60 * 60 * 1000);
+        if(data.timestamp < hace24hrs){
+          // Borrador expirado — limpiar
+          invEliminarBorrador(suc);
+          if(cb) cb(null);
+          return;
+        }
+        if(cb) cb(data);
+      } else {
+        if(cb) cb(null);
+      }
+    })
+    .catch(function(){ if(cb) cb(null); });
+}
+
+function invEliminarBorrador(suc){
+  fetch(SCRIPT_URL + '?tipo=borrador_delete&sucursal=' + encodeURIComponent(suc)).catch(function(){});
+}
+
+function invRestaurarBorrador(borrador){
+  if(!borrador) return;
+  invConteo = borrador.conteo || {};
+  // Refresh UI
+  document.querySelectorAll('.inv-qty-input').forEach(function(inp){
+    var code = inp.getAttribute('data-code');
+    if(code && invConteo[code] !== undefined){
+      inp.value = invConteo[code];
+      var card = document.getElementById('icard-' + code);
+      if(card) card.classList.toggle('has-qty', parseFloat(invConteo[code]) > 0);
+    }
+  });
+  invActualizarTotales();
+}
+
+// ══ SESION ESPEJO — MONITOR ══
+function invPublicarEstado(suc, activo){
+  if(!suc) return;
+  fetch(SCRIPT_URL + '?tipo=espejo_update&sucursal=' + encodeURIComponent(suc) + '&activo=' + (activo?'1':'0') + '&usuario=' + encodeURIComponent(sesionActual ? sesionActual.nombre : '') + '&hora=' + encodeURIComponent(new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}))).catch(function(){});
+}
+
+function monitorCargarEstados(){
+  if(!sesionActual || sesionActual.rol !== 'admin') return;
+  fetch(SCRIPT_URL + '?tipo=espejo_list')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      monitorRender(data || []);
+    }).catch(function(){});
+}
+
+function monitorRender(estados){
+  var wrap = document.getElementById('monitor-estados');
+  if(!wrap) return;
+  var activos = estados.filter(function(e){ return e.activo; });
+  if(!activos.length){
+    wrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--grey-txt);font-size:14px;">No hay inventarios en progreso en este momento.</div>';
+    return;
+  }
+  var h = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;">';
+  activos.forEach(function(e){
+    h += '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:12px;padding:16px;border-left:4px solid #2E9E6B;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+      '<div style="font-size:15px;font-weight:700;color:var(--dark);">' + e.sucursal + '</div>' +
+      '<span style="background:rgba(46,158,107,.12);color:#2E9E6B;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;">● EN PROGRESO</span>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--grey-txt);">Iniciado por: <strong>' + (e.usuario||'—') + '</strong></div>' +
+      '<div style="font-size:12px;color:var(--grey-txt);">Hora de inicio: ' + (e.hora||'—') + '</div>' +
+      '</div>';
+  });
+  h += '</div>';
+  wrap.innerHTML = h;
+}
+
+// ══ COMPRAS CONCILIADAS ══
+var concFolioActual = '';
+var concSucActual = '';
+
+function conciliacionCargar(){
+  var suc = document.getElementById('conc-suc').value;
+  var desde = document.getElementById('conc-desde').value;
+  var hasta = document.getElementById('conc-hasta').value;
+  var estadoF = document.getElementById('conc-estado-filtro').value;
+  var tablaEl = document.getElementById('conc-tabla');
+  tablaEl.innerHTML = '<div style="text-align:center;padding:30px;color:var(--grey-txt);">Cargando...</div>';
+
+  var url = SCRIPT_URL + '?tipo=conciliacion_list';
+  if(suc) url += '&sucursal=' + encodeURIComponent(suc);
+  if(desde) url += '&desde=' + encodeURIComponent(desde);
+  if(hasta) url += '&hasta=' + encodeURIComponent(hasta);
+
+  fetch(url)
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if(!data || !data.length){ tablaEl.innerHTML = '<div style="text-align:center;padding:30px;color:var(--grey-txt);">No hay registros para el periodo seleccionado.</div>'; return; }
+      // Filter by estado
+      var rows = estadoF ? data.filter(function(r){ return r.estado === estadoF; }) : data;
+      concRender(rows);
+    })
+    .catch(function(){ tablaEl.innerHTML = '<div style="text-align:center;padding:20px;color:#D4504A;">Error al cargar datos.</div>'; });
+}
+
+function concRender(rows){
+  var totalPed = 0, montoTotal = 0, montoReal = 0;
+  var h = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+  h += '<thead><tr style="background:var(--blue-dkr);">';
+  ['Folio','Fecha','Sucursal','Entrega requerida','Monto estimado','Monto real','Diferencia','Estado','Acciones'].forEach(function(c){
+    h += '<th style="padding:9px 12px;color:rgba(255,255,255,.85);font-size:11px;text-align:left;white-space:nowrap;">' + c + '</th>';
+  });
+  h += '</tr></thead><tbody>';
+
+  rows.forEach(function(r, i){
+    var esCancelada = r.estado === 'CANCELADA';
+    var montoEst = parseFloat((r.totalEstimado||'0').replace(/[$,]/g,'')) || 0;
+    var montoRe  = esCancelada ? 0 : (parseFloat((r.totalReal||'0').replace(/[$,]/g,'')) || (r.estado === 'VENCIDA' || r.estado === 'PENDIENTE' ? montoEst : 0));
+    var diff = montoRe - montoEst;
+    var diffColor = diff === 0 ? '#2E9E6B' : diff < 0 ? '#D4504A' : '#2E9E6B';
+    var estadoColor = {EVALUADA:'#2E9E6B', PENDIENTE:'#E07B2A', VENCIDA:'#D4504A', CANCELADA:'#6B7E93'}[r.estado] || '#6B7E93';
+
+    if(!esCancelada){
+      totalPed++;
+      montoTotal += montoEst;
+      montoReal  += montoRe;
+    }
+
+    h += '<tr style="background:' + (i%2===0?'#fff':'#f5f8fc') + ';border-top:1px solid var(--grey-lt);' + (esCancelada?'opacity:.5;':'') + '">';
+    h += '<td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--blue);white-space:nowrap;">' + (r.folio||'') + '</td>';
+    h += '<td style="padding:8px 12px;white-space:nowrap;">' + (r.fecha||'') + '</td>';
+    h += '<td style="padding:8px 12px;">' + (r.sucursal||'') + '</td>';
+    h += '<td style="padding:8px 12px;white-space:nowrap;">' + (r.fechaEntrega||'') + '</td>';
+    h += '<td style="padding:8px 12px;font-weight:600;">' + (esCancelada ? '<span style="color:#6B7E93;">TOTAL ESTIMADO $0.00</span>' : ('$' + montoEst.toFixed(2))) + '</td>';
+    h += '<td style="padding:8px 12px;font-weight:600;color:#2E9E6B;">' + (esCancelada ? '—' : ('$' + montoRe.toFixed(2))) + '</td>';
+    h += '<td style="padding:8px 12px;font-weight:700;color:' + diffColor + ';">' + (esCancelada ? '—' : ((diff >= 0 ? '+' : '') + '$' + diff.toFixed(2))) + '</td>';
+    h += '<td style="padding:8px 12px;"><span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;background:' + estadoColor + '22;color:' + estadoColor + ';">' + (r.estado||'') + '</span></td>';
+    h += '<td style="padding:8px 12px;">';
+    if(!esCancelada && r.estado !== 'EVALUADA'){
+      h += '<button onclick="conciliacionCancelarAbrir(' + JSON.stringify(r.folio) + ',' + JSON.stringify(r.sucursal) + ')" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid #D4504A;background:#fff;cursor:pointer;color:#D4504A;font-weight:600;">Cancelar</button>';
+    }
+    h += '</td></tr>';
+  });
+
+  h += '</tbody>';
+  // Totals row
+  var diff = montoReal - montoTotal;
+  h += '<tfoot><tr style="background:var(--blue-lt);font-weight:700;">';
+  h += '<td colspan="4" style="padding:10px 12px;color:var(--blue-dk);text-align:right;">TOTAL PERIODO (' + totalPed + ' pedidos)</td>';
+  h += '<td style="padding:10px 12px;color:var(--blue-dk);">$' + montoTotal.toFixed(2) + '</td>';
+  h += '<td style="padding:10px 12px;color:#2E9E6B;">$' + montoReal.toFixed(2) + '</td>';
+  h += '<td style="padding:10px 12px;color:' + (diff>=0?'#2E9E6B':'#D4504A') + ';">' + (diff>=0?'+':'') + '$' + diff.toFixed(2) + '</td>';
+  h += '<td colspan="2"></td></tr></tfoot>';
+  h += '</table></div>';
+
+  document.getElementById('conc-tabla').innerHTML = h;
+  document.getElementById('conc-total-ped').textContent = totalPed;
+  document.getElementById('conc-monto-total').textContent = '$' + montoTotal.toFixed(2);
+  document.getElementById('conc-monto-real').textContent = '$' + montoReal.toFixed(2);
+  var d = montoReal - montoTotal;
+  document.getElementById('conc-diferencia').textContent = (d>=0?'+':'') + '$' + d.toFixed(2);
+  document.getElementById('conc-diferencia').style.color = d >= 0 ? '#2E9E6B' : '#D4504A';
+}
+
+function conciliacionCancelarAbrir(folio, sucursal){
+  concFolioActual = folio;
+  concSucActual = sucursal;
+  document.getElementById('modal-cancel-folio').textContent = folio;
+  document.getElementById('modal-cancel-suc').textContent = sucursal;
+  document.getElementById('cancel-motivo').value = '';
+  document.getElementById('cancel-obs').value = '';
+  document.getElementById('modal-cancelar').style.display = 'flex';
+}
+
+function conciliacionCancelarConfirmar(){
+  var motivo = document.getElementById('cancel-motivo').value;
+  if(!motivo){ alert('Selecciona un motivo de cancelacion.'); return; }
+  var obs = document.getElementById('cancel-obs').value;
+  document.getElementById('modal-cancelar').style.display = 'none';
+  iframePost(SCRIPT_URL, {
+    tipo: 'cancelar_sdp',
+    folio: concFolioActual,
+    sucursal: concSucActual,
+    motivo: motivo,
+    observaciones: obs,
+    canceladoPor: sesionActual ? sesionActual.nombre : 'Admin',
+    timestamp: new Date(Date.now()+3600000).toLocaleString('es-MX',{hour12:false})
+  }, function(){
+    conciliacionCargar();
+    alert('SDP ' + concFolioActual + ' cancelada correctamente. Se han enviado notificaciones a todos los involucrados.');
+  });
+}
+
+// Set default dates for conciliacion (current month)
+(function(){
+  var hoy = new Date(Date.now()+3600000);
+  var primeroDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0];
+  var hoyStr = hoy.toISOString().split('T')[0];
+  var d = document.getElementById('conc-desde');
+  var h = document.getElementById('conc-hasta');
+  if(d) d.value = primeroDiaMes;
+  if(h) h.value = hoyStr;
+})();
+
+// ══ SESION ESPEJO — MODO LECTURA ══
+var sesionEspejo = false;
+var espejoTimer = null;
+var espejoEstado = {};
+
+function sesionRegistrar(email){
+  fetch(SCRIPT_URL + '?tipo=sesion_registrar&email=' + encodeURIComponent(email) + '&ts=' + Date.now())
+    .catch(function(){});
+  // Heartbeat cada 30 segundos para mantener sesion activa
+  setInterval(function(){
+    fetch(SCRIPT_URL + '?tipo=sesion_registrar&email=' + encodeURIComponent(email) + '&ts=' + Date.now())
+      .catch(function(){});
+  }, 30000);
+  // Remove session on page close
+  window.addEventListener('beforeunload', function(){
+    fetch(SCRIPT_URL + '?tipo=sesion_cerrar&email=' + encodeURIComponent(email)).catch(function(){});
+  });
+}
+
+function espejoMostrarBanner(){
+  var banner = document.getElementById('espejo-banner');
+  if(!banner){
+    banner = document.createElement('div');
+    banner.id = 'espejo-banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;width:100%;background:#1D4F73;color:#fff;padding:8px 16px;font-size:13px;font-weight:600;z-index:99998;display:flex;align-items:center;justify-content:space-between;';
+    banner.innerHTML = '<span>&#128065; Modo solo lectura — Sesion espejo activa. No puedes realizar cambios.</span>' +
+      '<span id="espejo-estado" style="font-size:11px;opacity:.7;">Sincronizando...</span>';
+    document.body.prepend(banner);
+    // Push content down
+    var root = document.getElementById('app-root');
+    if(root) root.style.paddingTop = '36px';
+  }
+}
+
+function espejoPollStart(){
+  if(espejoTimer) clearInterval(espejoTimer);
+  espejoActualizar();
+  espejoTimer = setInterval(espejoActualizar, 10000); // cada 10 segundos
+}
+
+function espejoActualizar(){
+  if(!sesionActual) return;
+  fetch(SCRIPT_URL + '?tipo=espejo_estado&email=' + encodeURIComponent(sesionActual.email))
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      espejoEstado = data || {};
+      espejoRenderEstado();
+      var ind = document.getElementById('espejo-estado');
+      if(ind) ind.textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    }).catch(function(){});
+}
+
+function espejoRenderEstado(){
+  var wrap = document.getElementById('espejo-contenido');
+  if(!wrap) return;
+  var modulo = espejoEstado.modulo || '';
+  var paso   = espejoEstado.paso || '';
+  var datos  = espejoEstado.datos || {};
+  if(!modulo){ wrap.innerHTML = '<p style="text-align:center;padding:40px;color:var(--grey-txt);">El usuario principal no tiene actividad en este momento.</p>'; return; }
+  
+  var h = '<div style="background:var(--blue-lt);border-radius:12px;padding:20px;margin-bottom:16px;">' +
+    '<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--grey-txt);margin-bottom:6px;">Modulo activo</div>' +
+    '<div style="font-size:18px;font-weight:700;color:var(--blue-dk);">' + modulo + '</div>' +
+    '<div style="font-size:13px;color:var(--grey-txt);margin-top:4px;">' + paso + '</div>' +
+    '</div>';
+
+  if(datos.sucursal) h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">' +
+    '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:8px;padding:8px 14px;font-size:13px;"><span style="color:var(--grey-txt);">Sucursal: </span><strong>' + datos.sucursal + '</strong></div>' +
+    (datos.gerente ? '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:8px;padding:8px 14px;font-size:13px;"><span style="color:var(--grey-txt);">Responsable: </span><strong>' + datos.gerente + '</strong></div>' : '') +
+    (datos.folio ? '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:8px;padding:8px 14px;font-size:13px;font-family:monospace;font-weight:700;color:var(--blue);">' + datos.folio + '</div>' : '') +
+    '</div>';
+
+  if(modulo === 'Inventario' && datos.productos && datos.productos.length){
+    h += '<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--grey-txt);margin-bottom:8px;">Progreso del conteo</div>';
+    h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    h += '<tr style="background:var(--blue-dkr);"><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:left;">Codigo</th><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:left;">Producto</th><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:right;">Cantidad</th></tr>';
+    datos.productos.forEach(function(p, i){
+      var qty = parseFloat(p.qty) || 0;
+      var color = qty === 0 ? '#D4504A' : '#2E9E6B';
+      h += '<tr style="background:' + (i%2===0?'#fff':'#f5f8fc') + '">' +
+        '<td style="padding:6px 10px;font-family:monospace;color:var(--blue);">' + p.code + '</td>' +
+        '<td style="padding:6px 10px;">' + p.name + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-weight:700;color:' + color + ';">' + (qty > 0 ? qty : '—') + '</td></tr>';
+    });
+    h += '</table></div>';
+  }
+
+  if(modulo === 'Solicitud de Pedido' && datos.productos && datos.productos.length){
+    h += '<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--grey-txt);margin-bottom:8px;">Productos en la solicitud</div>';
+    h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    h += '<tr style="background:var(--blue-dkr);"><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:left;">Codigo</th><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:left;">Producto</th><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:right;">Cantidad</th></tr>';
+    datos.productos.forEach(function(p, i){
+      h += '<tr style="background:' + (i%2===0?'#fff':'#f5f8fc') + '">' +
+        '<td style="padding:6px 10px;font-family:monospace;color:var(--blue);">' + p.code + '</td>' +
+        '<td style="padding:6px 10px;">' + p.name + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-weight:700;">' + p.qty + '</td></tr>';
+    });
+    h += '</table></div>';
+  }
+
+  wrap.innerHTML = h;
+}
+
+function espejoPublicarEstado(modulo, paso, datos){
+  if(!sesionActual || sesionEspejo) return; // no publish if in mirror mode
+  fetch(SCRIPT_URL + '?tipo=espejo_publicar&email=' + encodeURIComponent(sesionActual.email) +
+    '&modulo=' + encodeURIComponent(modulo) +
+    '&paso=' + encodeURIComponent(paso) +
+    '&datos=' + encodeURIComponent(JSON.stringify(datos)))
+    .catch(function(){});
+}
+
+// Block all form interactions in mirror mode
+function espejoBloquear(){
+  if(!sesionEspejo) return;
+  document.addEventListener('click', function(e){
+    var targets = ['button','input','select','textarea','a'];
+    var el = e.target;
+    while(el){
+      if(targets.indexOf(el.tagName.toLowerCase()) >= 0){
+        e.preventDefault(); e.stopPropagation();
+        espejoMostrarBanner();
+        return;
+      }
+      el = el.parentElement;
+    }
+  }, true);
+}
+
+</script>
+<!-- MOD4: HISTORIAL INVENTARIOS -->
+<div class="module" id="mod4">
+<div class="wrap">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div>
+        <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:4px;">Historial de Inventarios</h2>
+        <p style="font-size:13px;color:var(--grey-txt);">Registro permanente por sucursal. Solo lectura.</p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="histCargar()" style="background:var(--blue);color:#fff;padding:9px 18px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">&#8635; Actualizar</button>
+        <button id="btn-limpiar-hist" onclick="histLimpiar()" style="display:none;background:#D4504A;color:#fff;padding:9px 18px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">&#128465; Limpiar historial</button>
+      </div>
+    </div>
+    <!-- Tabs por sucursal -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:2px solid var(--grey-lt);padding-bottom:0;">
+      <div id="htab-all" onclick="histTab('all')" style="padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600;color:var(--blue);border-bottom:2px solid var(--blue);margin-bottom:-2px;">Todos</div>
+      <div id="htab-ac" onclick="histTab('Avila Camacho')" style="padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600;color:var(--grey-txt);">Avila Camacho</div>
+      <div id="htab-pj" onclick="histTab('Paseo Jardines')" style="padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600;color:var(--grey-txt);">Paseo Jardines</div>
+      <div id="htab-po" onclick="histTab('Postreria')" style="padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600;color:var(--grey-txt);">Postreria</div>
+    </div>
+    <div id="hist-loading" style="display:none;text-align:center;padding:30px;color:var(--grey-txt);">
+      <div style="width:32px;height:32px;border:3px solid var(--blue-lt);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 10px;"></div>
+      Cargando historial...
+    </div>
+    <div id="hist-list">
+      <div style="text-align:center;padding:40px;color:var(--grey-txt);">Da clic en Actualizar para cargar el historial.</div>
+    </div>
+  </div>
+</div>
+</div><!-- end mod4 -->
+
+
+<!-- MOD5: COMPRAS CONCILIADAS -->
+<div class="module" id="mod5">
+<div class="wrap">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+      <div>
+        <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:4px;">Compras Conciliadas</h2>
+        <p style="font-size:13px;color:var(--grey-txt);">Historial de SDP vs evaluaciones de entrega por periodo. SDP vencidas sin evaluar toman el monto original.</p>
+      </div>
+    </div>
+    <!-- Filtros -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:12px;margin-bottom:20px;align-items:end;flex-wrap:wrap;">
+      <div class="field"><label>Sucursal</label>
+        <div class="sel-wrap"><select id="conc-suc">
+          <option value="">Todas</option>
+          <option value="ÁVILA CAMACHO">Ávila Camacho</option>
+          <option value="PASEO JARDINES">Paseo Jardines</option>
+          <option value="POSTRERÍA">Postrería</option>
+        </select></div>
+      </div>
+      <div class="field"><label>Desde</label><input type="date" id="conc-desde"></div>
+      <div class="field"><label>Hasta</label><input type="date" id="conc-hasta"></div>
+      <div class="field"><label>Estado</label>
+        <div class="sel-wrap"><select id="conc-estado-filtro">
+          <option value="">Todos</option>
+          <option value="EVALUADA">Evaluadas</option>
+          <option value="VENCIDA">Vencidas</option>
+          <option value="PENDIENTE">Pendientes</option>
+          <option value="CANCELADA">Canceladas</option>
+        </select></div>
+      </div>
+      <button onclick="conciliacionCargar()" style="background:var(--blue);color:#fff;padding:9px 18px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">Buscar</button>
+    </div>
+    <!-- Resumen tarjetas -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;" id="conc-resumen-cards">
+      <div style="background:var(--blue-lt);border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--grey-txt);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Total pedidos</div>
+        <div style="font-size:22px;font-weight:700;color:var(--blue-dk);" id="conc-total-ped">—</div>
+      </div>
+      <div style="background:#E8F7F1;border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--grey-txt);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Monto total periodo</div>
+        <div style="font-size:22px;font-weight:700;color:#2E9E6B;" id="conc-monto-total">—</div>
+      </div>
+      <div style="background:#FEF3E8;border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--grey-txt);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Monto real recibido</div>
+        <div style="font-size:22px;font-weight:700;color:#E07B2A;" id="conc-monto-real">—</div>
+      </div>
+      <div style="background:#FDECEA;border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--grey-txt);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Diferencia</div>
+        <div style="font-size:22px;font-weight:700;color:#D4504A;" id="conc-diferencia">—</div>
+      </div>
+    </div>
+    <div id="conc-tabla"></div>
+    <!-- Modal cancelar SDP -->
+    <div id="modal-cancelar" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9000;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:16px;padding:28px;width:100%;max-width:480px;margin:20px;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+        <h3 style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#D4504A;margin-bottom:6px;">Cancelar SDP</h3>
+        <p style="font-size:13px;color:var(--grey-txt);margin-bottom:16px;">Esta accion no se puede deshacer. La SDP quedara marcada como CANCELADA y se notificara a todos.</p>
+        <div style="background:#FDECEA;border-radius:10px;padding:12px 14px;margin-bottom:16px;">
+          <div id="modal-cancel-folio" style="font-size:16px;font-weight:700;color:#D4504A;font-family:monospace;"></div>
+          <div id="modal-cancel-suc" style="font-size:13px;color:var(--grey-txt);margin-top:2px;"></div>
+        </div>
+        <div class="field" style="margin-bottom:16px;">
+          <label>Motivo de cancelacion <span style="color:#D4504A;">*</span></label>
+          <div class="sel-wrap"><select id="cancel-motivo">
+            <option value="">Selecciona motivo...</option>
+            <option value="Pedido de prueba">Pedido de prueba</option>
+            <option value="Error en productos">Error en productos solicitados</option>
+            <option value="Error en cantidades">Error en cantidades</option>
+            <option value="Pedido duplicado">Pedido duplicado</option>
+            <option value="Cambio de fecha">Cambio de fecha de entrega</option>
+            <option value="Otro">Otro</option>
+          </select></div>
+        </div>
+        <div class="field" style="margin-bottom:20px;">
+          <label>Observaciones adicionales</label>
+          <input type="text" id="cancel-obs" placeholder="Detalle adicional (opcional)" style="width:100%;">
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;">
+          <button onclick="document.getElementById('modal-cancelar').style.display='none'" style="background:var(--grey-lt);color:var(--dark);padding:9px 20px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer;">Cancelar</button>
+          <button onclick="conciliacionCancelarConfirmar()" style="background:#D4504A;color:#fff;padding:9px 20px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">Confirmar cancelacion</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+
+<!-- ESPEJO: Vista solo lectura -->
+<div id="espejo-view" style="display:none;padding:24px;">
+  <div style="max-width:900px;margin:0 auto;">
+    <div id="espejo-contenido">
+      <div style="text-align:center;padding:60px;color:var(--grey-txt);">Cargando estado del usuario...</div>
+    </div>
+  </div>
+</div>
+</div><!-- end app-root -->
+<div id="inv-autosave-ind" style="position:fixed;bottom:20px;right:20px;background:rgba(46,158,107,.95);color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;z-index:99999;opacity:0;transition:opacity .6s;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.2);"></div>
+</body>
+</html
+function cargarCatalogoDinamico(cb) {
+  fetch(SCRIPT_URL + '?tipo=catalogo')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if(data && data.length > 0){
+        CATALOGO = data.map(function(p){
+          return {
+            code: String(p.code||'').trim(),
+            cat:  String(p.cat||'').trim(),
+            name: String(p.name||'').trim(),
+            pres: String(p.pres||'').trim(),
+            precio: parseFloat(p.precio)||0
+          };
+        });
+      }
+      if(cb) cb();
+    })
+    .catch(function(){
+      // Si falla, usa el catálogo local
+      CATALOGO = CATALOGO_LOCAL.slice();
+      if(cb) cb();
+    });
+}
+const CAT_ICONS = {'BARRA':'','COCINA':'','POSTRERIA INSUMOS':'','SALON - LOBBY':'','POSTRERIA PRODUCTO TERMINADO':''};
+
+// State
+let pedido = {}; // code -> {qty, obs}
+let activeCat = 'Todos';
+let currentScreen = 1;
+let folioActual = '';
+
+// ── SUCURSAL ──
+function setSucursal(){
+  const s = document.getElementById('sucursal').value;
+  var esCedisOrigen = (s === 'CEDIS');
+  var esPost = (s === 'Postrería' || s === 'Postreria');
+  var lblEncargado = esPost ? 'Encargado' : 'Gerente / Encargado';
+  var lblEncargadoCorto = esPost ? 'Encargado' : 'Gerente';
+
+  // Show/hide destino selector
+  var wrapDestino = document.getElementById('wrap-destino');
+  var avisoCedis = document.getElementById('lbl-cedis-asig');
+  if(wrapDestino) wrapDestino.style.display = esCedisOrigen ? 'block' : 'none';
+  if(avisoCedis) avisoCedis.style.display = esCedisOrigen ? 'block' : 'none';
+
+  // Reset destino if not CEDIS
+  if(!esCedisOrigen){
+    var destinoSel = document.getElementById('sdp-destino');
+    if(destinoSel) destinoSel.value = '';
+  }
+
+  // Update all gerente labels
+  var lblSdp = document.getElementById('lbl-gerente-sdp');
+  if(lblSdp) lblSdp.textContent = lblEncargado;
+  var lblSum = document.getElementById('lbl-sv-ger');
+  if(lblSum) lblSum.textContent = lblEncargadoCorto;
+  var lblCar = document.getElementById('car-lbl-ger');
+  if(lblCar) lblCar.textContent = lblEncargado;
+  var lblFirma = document.getElementById('firma-lbl-rol');
+  if(lblFirma) lblFirma.textContent = esPost ? 'Encargado de Area' : 'Gerente / Encargado de Sucursal';
+  if(SUCURSALES[s]){
+    document.getElementById('correoSuc').value = SUCURSALES[s].correo;
+    document.getElementById('gerenteSuc').value = SUCURSALES[s].gerente;
+  } else {
+    document.getElementById('correoSuc').value = '';
+    document.getElementById('gerenteSuc').value = '';
+  }
+}
+
+// ── NAVIGATION ──
+function goScreen(n){
+  if(n > currentScreen && !validateScreen(currentScreen)) return;
+  // Load existencia when entering catalog step
+  if(n === 2){
+    var sucVal = document.getElementById('sucursal') ? document.getElementById('sucursal').value : '';
+    if(sucVal) cargarExistenciaInventario(sucVal, function(){ renderProducts(); });
+  }
+  document.getElementById('screen-'+currentScreen).classList.remove('active');
+  document.getElementById('screen-'+n).classList.add('active');
+  for(let i=1;i<=3;i++){
+    const s=document.getElementById('stp'+i);
+    const d=document.getElementById('sd'+i);
+    s.className='stp';
+    if(i<n){s.classList.add('done');d.textContent='ok';}
+    else if(i===n){s.classList.add('active');d.textContent=i;}
+    else d.textContent=i;
+  }
+  currentScreen=n;
+  if(n===2) renderCatalog();
+  if(n===3) buildSummary();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// ── VALIDATION ──
+function validateScreen(s){
+  if(s===1){
+    if(!document.getElementById('sucursal').value){alert('Selecciona una sucursal.');return false;}
+    if(!document.getElementById('fechaEntrega').value){alert('Ingresa la fecha de entrega requerida.');return false;}
+  }
+  if(s===2){
+    const items = Object.values(pedido).filter(p=>p.qty>0);
+    if(!items.length){alert('Agrega al menos un producto al pedido.');return false;}
+  }
+  return true;
+}
+
+// ── CATALOG RENDER ──
+function renderCatalog(){
+  const cats = ['Todos',...new Set(CATALOGO.map(p=>p.cat))];
+  const filtersEl = document.getElementById('catFilters');
+  filtersEl.innerHTML = cats.map(c=>
+    `<button class="filter-btn ${c===activeCat?'on':''}" onclick="setCat('${c}')">${CAT_ICONS[c]||''} ${c}</button>`
+  ).join('');
+  renderProducts();
+}
+
+function setCat(cat){
+  activeCat = cat;
+  document.querySelectorAll('.filter-btn').forEach(b=>{
+    b.classList.toggle('on', b.textContent.trim().includes(cat) || (cat==='Todos' && b.textContent.trim()==='Todos'));
+  });
+  renderProducts();
+}
+
+function filterProducts(){ renderProducts(); }
+
+function renderProducts(){
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  const container = document.getElementById('catalogContainer');
+  const sucVal = document.getElementById('sucursal') ? document.getElementById('sucursal').value : '';
+  const filtered = CATALOGO.filter(p=>{
+    // Filter by sucursal
+    let catOk;
+    if(sucVal === 'Postrería') catOk = p.cat === 'POSTRERIA INSUMOS';
+    else catOk = p.cat !== 'POSTRERIA INSUMOS';
+    const matchCat = catOk && (activeCat==='Todos' || p.cat===activeCat);
+    const matchQ = !q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q);
+    return matchCat && matchQ;
+  });
+
+  if(!filtered.length){
+    container.innerHTML='<div class="empty"><div class="empty-icon"></div><p>No se encontraron productos</p></div>';
+    return;
+  }
+
+  const bycat = {};
+  filtered.forEach(p=>{ if(!bycat[p.cat]) bycat[p.cat]=[]; bycat[p.cat].push(p); });
+
+  container.innerHTML = Object.entries(bycat).map(([cat,prods])=>`
+    <div class="cat-section" style="margin-bottom:20px;">
+      <div class="cat-name" style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:.07em;color:var(--dark);padding:8px 0 6px;border-bottom:2px solid var(--blue-lt);margin-bottom:0;">${cat} <span style="font-family:'DM Sans',sans-serif;font-size:12px;font-weight:400;color:var(--grey-txt);">${prods.length} productos</span></div>
+      <div style="background:#fff;border:1px solid var(--grey-lt);border-radius:0 0 12px 12px;overflow:hidden;">
+        <div style="display:grid;grid-template-columns:90px 1fr 140px 80px 70px 100px 150px;background:var(--blue-dkr);padding:8px 14px;gap:10px;">
+          <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Codigo</div>
+          <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Producto</div>
+          <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Presentacion</div>
+          <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Precio</div>
+          <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Existencia</div>
+          <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Cantidad</div>
+          <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Observacion</div>
+        </div>
+        ${prods.map(p=>prodCard(p)).join('')}
+      </div>
+    </div>
+  `).join('');
+  updateCart();
+}
+
+function prodCard(p){
+  const item = pedido[p.code] || {qty:0,obs:''};
+  const hasQty = item.qty > 0;
+  return `
+    <div class="prod-card ${hasQty?'has-qty':''}" id="card-${p.code}" style="display:grid;grid-template-columns:90px 1fr 140px 80px 70px 100px 150px;align-items:center;padding:9px 14px;gap:10px;border-bottom:1px solid var(--grey-lt);background:${hasQty?'var(--blue-lt)':''};">
+      <div class="prod-code" style="font-size:11px;font-weight:700;color:var(--blue-dk);font-family:monospace;">${p.code}</div>
+      <div class="prod-name" style="font-size:13px;color:var(--dark);">${p.name}</div>
+      <div class="prod-pres" style="font-size:11px;color:var(--grey-txt);">${p.pres}</div>
+      <div class="prod-price" style="font-size:12px;font-weight:600;color:var(--blue-dk);">${p.precio>0?'$'+p.precio.toFixed(2):''}</div>
+      <div class="prod-exist" style="font-size:12px;font-weight:700;text-align:center;color:${INVENTARIO_EXISTENCIA[p.code]===undefined?'var(--grey-txt)':INVENTARIO_EXISTENCIA[p.code]===0?'#D4504A':'#2E9E6B'};">${INVENTARIO_EXISTENCIA[p.code]!==undefined?INVENTARIO_EXISTENCIA[p.code].toFixed(2):'—'}</div>
+      <div class="prod-controls">
+        <div class="qty-wrap" style="display:flex;align-items:center;border:1.5px solid ${hasQty?'var(--blue)':'var(--grey-mid)'};border-radius:7px;overflow:hidden;background:#fff;width:90px;">
+          <button class="qty-btn" onclick="changeQty('${p.code}',-1)" style="width:26px;height:28px;border:none;background:none;font-size:16px;cursor:pointer;color:var(--blue);">−</button>
+          <input class="qty-input" type="number" min="0" value="${item.qty}"
+            id="qty-${p.code}" onchange="setQty('${p.code}',this.value)" style="width:38px;height:28px;border:none;text-align:center;font-family:DM Sans,sans-serif;font-size:13px;font-weight:600;outline:none;">
+          <button class="qty-btn" onclick="changeQty('${p.code}',1)" style="width:26px;height:28px;border:none;background:none;font-size:16px;cursor:pointer;color:var(--blue);">+</button>
+        </div>
+      </div>
+      <input class="obs-input" type="text" placeholder="Observación…"
+        id="obs-${p.code}" value="${item.obs}"
+        onchange="setObs('${p.code}',this.value)" style="font-size:11px;padding:5px 8px;border:1.5px solid var(--grey-mid);border-radius:7px;font-family:DM Sans,sans-serif;outline:none;width:100%;">
+    </div>`;
+}
+
+function changeQty(code, delta){
+  const inp = document.getElementById('qty-'+code);
+  const val = Math.max(0, (parseInt(inp.value)||0) + delta);
+  inp.value = val;
+  setQty(code, val);
+}
+
+function setQty(code, val){
+  const qty = Math.max(0, parseInt(val)||0);
+  if(!pedido[code]) pedido[code]={qty:0,obs:''};
+  pedido[code].qty = qty;
+  const card = document.getElementById('card-'+code);
+  if(card) card.classList.toggle('has-qty', qty>0);
+  updateCart();
+}
+
+function setObs(code, val){
+  if(!pedido[code]) pedido[code]={qty:0,obs:''};
+  pedido[code].obs = val;
+}
+
 function updateCart(){
   const items = CATALOGO.filter(p=>pedido[p.code]&&pedido[p.code].qty>0);
   const total = items.reduce((s,p)=>s+(p.precio*(pedido[p.code].qty||0)),0);
   document.getElementById('cartCount').textContent = items.length+' producto'+(items.length!==1?'s':'');
   document.getElementById('cartTotal').textContent = '$'+total.toFixed(2);
+  // Publish SDP mirror state
+  if(!sesionEspejo && sesionActual && items.length > 0){
+    var sucEl = document.getElementById('sucursal');
+    var suc = sucEl ? sucEl.value : '';
+    var prods = items.map(function(p){ return {code:p.code, name:p.name, qty:pedido[p.code].qty}; });
+    espejoPublicarEstado('Solicitud de Pedido', 'Paso 2 — Seleccion de productos', {sucursal: suc, productos: prods});
+  }
 }
 
 // ── SUMMARY ──
@@ -2404,9 +4631,37 @@ function loginSubmit(){
     return;
   }
   sesionActual = {email:email, rol:user.rol, sucursal:user.sucursal, nombre:user.nombre};
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('app-root').style.display = 'block';
-  aplicarRol();
+  // Check if another session is already active for this user
+  fetch(SCRIPT_URL + '?tipo=sesion_check&email=' + encodeURIComponent(email))
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if(data && data.activa){
+        // Enter mirror/read-only mode
+        sesionEspejo = true;
+        sesionActual.modoLectura = true;
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('app-root').style.display = 'block';
+        aplicarRol();
+        espejoPollStart();
+        espejoMostrarBanner();
+      } else {
+        // Register session and enter normal mode
+        sesionEspejo = false;
+        sesionActual.modoLectura = false;
+        sesionRegistrar(email);
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('app-root').style.display = 'block';
+        aplicarRol();
+      }
+    })
+    .catch(function(){
+      // If check fails, proceed normally
+      sesionEspejo = false;
+      sesionActual.modoLectura = false;
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app-root').style.display = 'block';
+      aplicarRol();
+    });
 }
 
 function aplicarRol(){
@@ -2450,6 +4705,18 @@ function aplicarRol(){
   if(rol === 'cedis'){
     var sdpSel = document.getElementById('sucursal');
     if(sdpSel){ sdpSel.disabled = false; sdpSel.value = 'CEDIS'; setSucursal(); }
+  }
+
+  // Mirror mode: show read-only view
+  if(sesionEspejo){
+    espejoBloquear();
+    // Hide all tabs and modules, show mirror view
+    document.querySelectorAll('.ntab').forEach(function(t){ t.style.display='none'; });
+    document.querySelectorAll('.module').forEach(function(m){ m.classList.remove('active'); });
+    var ev = document.getElementById('espejo-view');
+    if(ev) ev.style.display='block';
+    espejoPollStart();
+    return;
   }
 
   // Show first available tab
@@ -2814,7 +5081,7 @@ function invIniciarAutosave(){
   invAutosaveTimer = setInterval(function(){
     invGuardarBorrador();
     invMostrarIndicadorSave();
-  }, 30000); // cada 30 segundos
+  }, 300000); // cada 5 minutos
 }
 
 function invDetenerAutosave(){
@@ -3032,7 +5299,136 @@ function conciliacionCancelarConfirmar(){
   if(d) d.value = primeroDiaMes;
   if(h) h.value = hoyStr;
 })();
-</script>
+
+// ══ SESION ESPEJO — MODO LECTURA ══
+var sesionEspejo = false;
+var espejoTimer = null;
+var espejoEstado = {};
+
+function sesionRegistrar(email){
+  fetch(SCRIPT_URL + '?tipo=sesion_registrar&email=' + encodeURIComponent(email) + '&ts=' + Date.now())
+    .catch(function(){});
+  // Heartbeat cada 30 segundos para mantener sesion activa
+  setInterval(function(){
+    fetch(SCRIPT_URL + '?tipo=sesion_registrar&email=' + encodeURIComponent(email) + '&ts=' + Date.now())
+      .catch(function(){});
+  }, 30000);
+  // Remove session on page close
+  window.addEventListener('beforeunload', function(){
+    fetch(SCRIPT_URL + '?tipo=sesion_cerrar&email=' + encodeURIComponent(email)).catch(function(){});
+  });
+}
+
+function espejoMostrarBanner(){
+  var banner = document.getElementById('espejo-banner');
+  if(!banner){
+    banner = document.createElement('div');
+    banner.id = 'espejo-banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;width:100%;background:#1D4F73;color:#fff;padding:8px 16px;font-size:13px;font-weight:600;z-index:99998;display:flex;align-items:center;justify-content:space-between;';
+    banner.innerHTML = '<span>&#128065; Modo solo lectura — Sesion espejo activa. No puedes realizar cambios.</span>' +
+      '<span id="espejo-estado" style="font-size:11px;opacity:.7;">Sincronizando...</span>';
+    document.body.prepend(banner);
+    // Push content down
+    var root = document.getElementById('app-root');
+    if(root) root.style.paddingTop = '36px';
+  }
+}
+
+function espejoPollStart(){
+  if(espejoTimer) clearInterval(espejoTimer);
+  espejoActualizar();
+  espejoTimer = setInterval(espejoActualizar, 10000); // cada 10 segundos
+}
+
+function espejoActualizar(){
+  if(!sesionActual) return;
+  fetch(SCRIPT_URL + '?tipo=espejo_estado&email=' + encodeURIComponent(sesionActual.email))
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      espejoEstado = data || {};
+      espejoRenderEstado();
+      var ind = document.getElementById('espejo-estado');
+      if(ind) ind.textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    }).catch(function(){});
+}
+
+function espejoRenderEstado(){
+  var wrap = document.getElementById('espejo-contenido');
+  if(!wrap) return;
+  var modulo = espejoEstado.modulo || '';
+  var paso   = espejoEstado.paso || '';
+  var datos  = espejoEstado.datos || {};
+  if(!modulo){ wrap.innerHTML = '<p style="text-align:center;padding:40px;color:var(--grey-txt);">El usuario principal no tiene actividad en este momento.</p>'; return; }
+  
+  var h = '<div style="background:var(--blue-lt);border-radius:12px;padding:20px;margin-bottom:16px;">' +
+    '<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--grey-txt);margin-bottom:6px;">Modulo activo</div>' +
+    '<div style="font-size:18px;font-weight:700;color:var(--blue-dk);">' + modulo + '</div>' +
+    '<div style="font-size:13px;color:var(--grey-txt);margin-top:4px;">' + paso + '</div>' +
+    '</div>';
+
+  if(datos.sucursal) h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">' +
+    '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:8px;padding:8px 14px;font-size:13px;"><span style="color:var(--grey-txt);">Sucursal: </span><strong>' + datos.sucursal + '</strong></div>' +
+    (datos.gerente ? '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:8px;padding:8px 14px;font-size:13px;"><span style="color:var(--grey-txt);">Responsable: </span><strong>' + datos.gerente + '</strong></div>' : '') +
+    (datos.folio ? '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:8px;padding:8px 14px;font-size:13px;font-family:monospace;font-weight:700;color:var(--blue);">' + datos.folio + '</div>' : '') +
+    '</div>';
+
+  if(modulo === 'Inventario' && datos.productos && datos.productos.length){
+    h += '<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--grey-txt);margin-bottom:8px;">Progreso del conteo</div>';
+    h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    h += '<tr style="background:var(--blue-dkr);"><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:left;">Codigo</th><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:left;">Producto</th><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:right;">Cantidad</th></tr>';
+    datos.productos.forEach(function(p, i){
+      var qty = parseFloat(p.qty) || 0;
+      var color = qty === 0 ? '#D4504A' : '#2E9E6B';
+      h += '<tr style="background:' + (i%2===0?'#fff':'#f5f8fc') + '">' +
+        '<td style="padding:6px 10px;font-family:monospace;color:var(--blue);">' + p.code + '</td>' +
+        '<td style="padding:6px 10px;">' + p.name + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-weight:700;color:' + color + ';">' + (qty > 0 ? qty : '—') + '</td></tr>';
+    });
+    h += '</table></div>';
+  }
+
+  if(modulo === 'Solicitud de Pedido' && datos.productos && datos.productos.length){
+    h += '<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--grey-txt);margin-bottom:8px;">Productos en la solicitud</div>';
+    h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    h += '<tr style="background:var(--blue-dkr);"><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:left;">Codigo</th><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:left;">Producto</th><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:right;">Cantidad</th></tr>';
+    datos.productos.forEach(function(p, i){
+      h += '<tr style="background:' + (i%2===0?'#fff':'#f5f8fc') + '">' +
+        '<td style="padding:6px 10px;font-family:monospace;color:var(--blue);">' + p.code + '</td>' +
+        '<td style="padding:6px 10px;">' + p.name + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-weight:700;">' + p.qty + '</td></tr>';
+    });
+    h += '</table></div>';
+  }
+
+  wrap.innerHTML = h;
+}
+
+function espejoPublicarEstado(modulo, paso, datos){
+  if(!sesionActual || sesionEspejo) return; // no publish if in mirror mode
+  fetch(SCRIPT_URL + '?tipo=espejo_publicar&email=' + encodeURIComponent(sesionActual.email) +
+    '&modulo=' + encodeURIComponent(modulo) +
+    '&paso=' + encodeURIComponent(paso) +
+    '&datos=' + encodeURIComponent(JSON.stringify(datos)))
+    .catch(function(){});
+}
+
+// Block all form interactions in mirror mode
+function espejoBloquear(){
+  if(!sesionEspejo) return;
+  document.addEventListener('click', function(e){
+    var targets = ['button','input','select','textarea','a'];
+    var el = e.target;
+    while(el){
+      if(targets.indexOf(el.tagName.toLowerCase()) >= 0){
+        e.preventDefault(); e.stopPropagation();
+        espejoMostrarBanner();
+        return;
+      }
+      el = el.parentElement;
+    }
+  }, true);
+}
+
 
 
 <!-- MOD4: HISTORIAL INVENTARIOS -->
@@ -3156,6 +5552,15 @@ function conciliacionCancelarConfirmar(){
 </div>
 </div>
 
+
+<!-- ESPEJO: Vista solo lectura -->
+<div id="espejo-view" style="display:none;padding:24px;">
+  <div style="max-width:900px;margin:0 auto;">
+    <div id="espejo-contenido">
+      <div style="text-align:center;padding:60px;color:var(--grey-txt);">Cargando estado del usuario...</div>
+    </div>
+  </div>
+</div>
 </div><!-- end app-root -->
 <div id="inv-autosave-ind" style="position:fixed;bottom:20px;right:20px;background:rgba(46,158,107,.95);color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;z-index:99999;opacity:0;transition:opacity .6s;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.2);"></div>
 </body>

@@ -1353,8 +1353,13 @@ function buildSummary(){
     var esOrdinario = false;
     if(fechaEntregaVal){
       var fechaEnt = new Date(fechaEntregaVal + 'T12:00:00');
-      var diaEnt = fechaEnt.getDay();
-      esOrdinario = (diaEnt === 3 || diaEnt === 6); // Miercoles=3, Sabado=6
+      var diaEnt   = fechaEnt.getDay();
+      var hoy      = new Date();
+      var hoyStr   = hoy.getFullYear() + '-' + String(hoy.getMonth()+1).padStart(2,'0') + '-' + String(hoy.getDate()).padStart(2,'0');
+      var esMiercOSab = (diaEnt === 3 || diaEnt === 6); // Miercoles=3, Sabado=6
+      var esMismoDia  = (fechaEntregaVal === hoyStr);    // Entrega hoy mismo
+      // Ordinaria: miercoles o sabado Y NO es el mismo dia en que se genera
+      esOrdinario = esMiercOSab && !esMismoDia;
     }
     folioActual = 'SDP-' + Date.now().toString().slice(-6) + (esOrdinario ? '' : '-EXT');
   }
@@ -1575,6 +1580,9 @@ function showMod(n) {
     espejoPublicarEstado(modNames[n]||'', 'Modulo abierto', {});
   }
   if(n===5) conciliacionCargar();
+  // Show phone admin button only for admin
+  var btnTel = document.getElementById('btn-tel-admin');
+  if(btnTel && sesionActual) btnTel.style.display = sesionActual.rol==='admin' ? 'block' : 'none';
   if(n===7) histSdpCargar();
 }
 
@@ -2170,10 +2178,61 @@ function evSelectFolioBtn(el){evSelectFolio(el.dataset.folio);}
 function fmtFechaES(str){if(!str)return '-';var d=new Date(str);if(isNaN(d))return str;return d.toLocaleString('es-MX',{weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});}
 function fmtFechaCorta(str){if(!str)return '-';var d=new Date(str);if(isNaN(d))return str;return d.toLocaleDateString('es-MX',{weekday:'short',day:'numeric',month:'short',year:'numeric'});}
 function evSelectFolio(f){
-  if(!f||f.length<4)return;evFolioActual=f;document.getElementById('ev-folio-input').value=f;
+  if(!f||f.length<4)return;
+  evFolioActual=f;
+  document.getElementById('ev-folio-input').value=f;
   document.querySelectorAll('[id^="evp-"]').forEach(function(el){el.style.borderColor='var(--grey-lt)';el.style.background='#fff';});
   var el=document.getElementById('evp-'+f);if(el){el.style.borderColor='var(--blue)';el.style.background='var(--blue-lt)';}
   document.getElementById('ev-btn-cont').style.display='inline-flex';
+
+  // Pre-fill hora entrada and salida from QR check data or current time
+  var suc = document.getElementById('ev-suc') ? document.getElementById('ev-suc').value : '';
+  var sucKey = suc.toLowerCase()
+    .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
+    .replace(/ñ/g,'n').replace(/\s+/g,'_');
+  var checkKey = 'lmc_check_' + sucKey;
+  var horaIn = document.getElementById('ev-horaIn');
+  var horaOut = document.getElementById('ev-horaOut');
+
+  // Try QR check data first
+  try {
+    var raw = localStorage.getItem(checkKey);
+    if(raw){
+      var check = JSON.parse(raw);
+      var hoy = new Date().toISOString().split('T')[0];
+      if(check.fecha === hoy && (!check.folio || check.folio === f)){
+        if(check.entrada && horaIn && !horaIn.value) horaIn.value = check.entrada;
+        if(check.salida  && horaOut && !horaOut.value) horaOut.value = check.salida;
+        if(check.entrada || check.salida){
+          evMostrarCheckBadge(check);
+          return;
+        }
+      }
+    }
+  } catch(e){}
+
+  // Also try fetching from AS
+  fetch(SCRIPT_URL + '?tipo=get_check&folio=' + encodeURIComponent(f) + '&sucursal=' + encodeURIComponent(suc))
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d && d.entrada && horaIn && !horaIn.value) horaIn.value = d.entrada;
+      if(d && d.salida  && horaOut && !horaOut.value) horaOut.value = d.salida;
+      if(d && (d.entrada || d.salida)) evMostrarCheckBadge(d);
+    }).catch(function(){});
+}
+
+function evMostrarCheckBadge(check){
+  var existing = document.getElementById('ev-check-badge');
+  if(existing) existing.remove();
+  var horaIn = document.getElementById('ev-horaIn');
+  if(!horaIn) return;
+  var badge = document.createElement('div');
+  badge.id = 'ev-check-badge';
+  badge.style.cssText = 'background:rgba(46,158,107,.1);border:1px solid #2E9E6B;border-radius:8px;padding:8px 12px;font-size:12px;color:#2E9E6B;margin-top:6px;display:flex;align-items:center;gap:6px;';
+  badge.innerHTML = '<span style="font-size:14px;">&#10003;</span> Datos del check QR cargados automaticamente' +
+    (check.entrada ? ' &mdash; Entrada: <strong>' + check.entrada + '</strong>' : '') +
+    (check.salida  ? ' &mdash; Salida: <strong>'  + check.salida  + '</strong>' : '');
+  horaIn.parentNode.insertBefore(badge, horaIn.nextSibling);
 }
 
 function evLoadDetalle(){
@@ -2451,14 +2510,12 @@ function loginSubmit(){
         sesionActual.modoLectura = true;
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('app-root').style.display = 'block';
-        // Show mirror view immediately
         document.querySelectorAll('.ntab').forEach(function(t){ t.style.display='none'; });
         document.querySelectorAll('.module').forEach(function(m){ m.classList.remove('active'); });
         var ev = document.getElementById('espejo-view');
         if(ev) ev.style.display = 'block';
         espejoMostrarBanner();
         espejoBloquear();
-        // Start polling immediately
         espejoPollStart();
       } else {
         // Register session and enter normal mode
@@ -2472,7 +2529,6 @@ function loginSubmit(){
     })
     .catch(function(err){
       console.log('sesion_check error:', err);
-      // On error, proceed normally
       sesionEspejo = false;
       sesionActual.modoLectura = false;
       sesionRegistrar(email);
@@ -2489,6 +2545,9 @@ function aplicarRol(){
   var btnLimpiar = document.getElementById('btn-limpiar-hist');
   if(btnLimpiar) btnLimpiar.style.display = rol === 'admin' ? 'inline-block' : 'none';
   // Show/hide tabs based on role
+  // Show phone admin button for admin
+  var btnTelRol = document.getElementById('btn-tel-admin');
+  if(btnTelRol) btnTelRol.style.display = rol === 'admin' ? 'block' : 'none';
   // Admin tiene acceso universal a todas las pestanas presentes y futuras
   var tabsPermitidos = {
     'ntab4': ['admin','cedis','sucursal'],  // Historial
@@ -3453,6 +3512,48 @@ function eliminarLineaSDP(folio, sucursal, btn){
     })
     .catch(function(){ btn.disabled = false; btn.textContent = '🗑'; });
 }
+
+// ══ GESTIÓN DE TELÉFONOS CEDIS (solo Admin) ══
+function telefonosCargar(){
+  var wrap = document.getElementById('tel-lista');
+  if(!wrap) return;
+  wrap.innerHTML = '<div style="color:var(--grey-txt);font-size:13px;">Cargando...</div>';
+  fetch(SCRIPT_URL + '?tipo=listar_telefonos')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      var h = '';
+      if(!data||!data.length){ h = '<p style="color:var(--grey-txt);font-size:13px;">Sin teléfonos registrados.</p>'; }
+      else {
+        data.forEach(function(tel){
+          h += '<div style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--grey-lt);border-radius:10px;padding:10px 14px;margin-bottom:8px;">' +
+            '<span style="font-family:monospace;font-size:15px;font-weight:600;color:var(--dark);">📱 ' + tel + '</span>' +
+            '<button onclick="telefonoEliminar(\'' + tel + '\')" style="background:#FDECEA;color:#D4504A;border:1px solid #D4504A;padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600;">Eliminar</button>' +
+            '</div>';
+        });
+      }
+      wrap.innerHTML = h;
+    }).catch(function(){ wrap.innerHTML = '<p style="color:#D4504A;font-size:13px;">Error al cargar.</p>'; });
+}
+
+function telefonoAgregar(){
+  var inp = document.getElementById('tel-nuevo');
+  var tel = (inp.value||'').replace(/\D/g,'');
+  if(tel.length < 10){ alert('Ingresa 10 dígitos.'); return; }
+  fetch(SCRIPT_URL + '?tipo=agregar_telefono&telefono=' + encodeURIComponent(tel))
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d.result==='ok'){ inp.value=''; telefonosCargar(); }
+      else alert('Error: ' + (d.msg||''));
+    }).catch(function(){ alert('Error de conexión.'); });
+}
+
+function telefonoEliminar(tel){
+  if(!confirm('¿Eliminar el teléfono ' + tel + '?')) return;
+  fetch(SCRIPT_URL + '?tipo=eliminar_telefono&telefono=' + encodeURIComponent(tel))
+    .then(function(r){ return r.json(); })
+    .then(function(){ telefonosCargar(); })
+    .catch(function(){ alert('Error de conexión.'); });
+}
 </script>
 
 <!-- MOD4: HISTORIAL INVENTARIOS -->
@@ -3578,6 +3679,22 @@ function eliminarLineaSDP(folio, sucursal, btn){
 
 
 <!-- ESPEJO: Vista solo lectura -->
+<!-- ADMIN: Gestión teléfonos CEDIS -->
+<div id="tel-admin-panel" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:16px;padding:24px;width:100%;max-width:420px;z-index:9999;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+    <h3 style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--dark);">📱 Teléfonos Autorizados</h3>
+    <button onclick="document.getElementById('tel-admin-panel').style.display='none'" style="background:var(--grey-lt);border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px;">✕ Cerrar</button>
+  </div>
+  <p style="font-size:12px;color:var(--grey-txt);margin-bottom:14px;">Solo estos teléfonos pueden hacer check de entrega desde los QR de sucursales.</p>
+  <div id="tel-lista" style="margin-bottom:14px;"></div>
+  <div style="display:flex;gap:8px;">
+    <input type="tel" id="tel-nuevo" placeholder="Número de 10 dígitos" maxlength="10" inputmode="numeric"
+      style="flex:1;padding:10px 14px;border:1.5px solid var(--grey-lt);border-radius:10px;font-size:14px;font-family:monospace;outline:none;">
+    <button onclick="telefonoAgregar()" style="background:var(--blue);color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">+ Agregar</button>
+  </div>
+</div>
+<div id="tel-admin-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.4);z-index:9998;" onclick="document.getElementById('tel-admin-panel').style.display='none';document.getElementById('tel-admin-overlay').style.display='none';"></div>
+
 <div id="espejo-view" style="display:none;padding:24px;">
   <div style="max-width:900px;margin:0 auto;">
     <div id="espejo-contenido">

@@ -2542,6 +2542,9 @@ function aplicarRol(){
 }
 
 function cerrarSesion(){
+  if(sesionActual && sesionActual.email){
+    fetch(SCRIPT_URL + '?tipo=sesion_cerrar&email=' + encodeURIComponent(sesionActual.email)).catch(function(){});
+  }
   sesionActual = null;
   document.getElementById('app-root').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
@@ -3140,9 +3143,22 @@ function sesionRegistrar(email){
     fetch(SCRIPT_URL + '?tipo=sesion_registrar&email=' + encodeURIComponent(email) + '&tabId=' + encodeURIComponent(tabId) + '&ts=' + Date.now())
       .catch(function(){});
   }, 60000);
-  // Remove session on page close
+  // Close session on page close/refresh
   window.addEventListener('beforeunload', function(){
-    fetch(SCRIPT_URL + '?tipo=sesion_cerrar&email=' + encodeURIComponent(email)).catch(function(){});
+    // Use sendBeacon for reliable delivery on page close
+    var url = SCRIPT_URL + '?tipo=sesion_cerrar&email=' + encodeURIComponent(email);
+    if(navigator.sendBeacon) navigator.sendBeacon(url);
+    else fetch(url).catch(function(){});
+  });
+  // Also close on visibility change (tab hidden for >5min)
+  document.addEventListener('visibilitychange', function(){
+    if(document.hidden){
+      setTimeout(function(){
+        if(document.hidden){
+          fetch(SCRIPT_URL + '?tipo=sesion_cerrar&email=' + encodeURIComponent(email)).catch(function(){});
+        }
+      }, 5 * 60 * 1000);
+    }
   });
 }
 

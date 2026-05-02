@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Entrega CEDIS — Paseo Jardines</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#F0F4F8;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:0;}
+    .header{width:100%;background:linear-gradient(135deg,#1D4F73,#3C8EC8);padding:24px 20px 20px;text-align:center;}
+    .header-sub{font-size:11px;color:rgba(255,255,255,.7);letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;}
+    .header-title{font-size:22px;font-weight:700;color:#fff;margin-bottom:2px;}
+    .header-suc{font-size:14px;color:rgba(255,255,255,.85);}
+    .container{width:100%;max-width:480px;padding:20px 16px;}
+    .card{background:#fff;border-radius:16px;padding:20px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.08);}
+    .card-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#6B7E93;margin-bottom:12px;}
+    .folio{font-size:22px;font-weight:700;color:#1D4F73;font-family:monospace;margin-bottom:4px;}
+    .badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;margin-bottom:12px;}
+    .badge-ord{background:rgba(46,158,107,.12);color:#2E9E6B;}
+    .badge-ext{background:rgba(224,123,42,.12);color:#E07B2A;}
+    .badge-asi{background:rgba(60,142,200,.12);color:#3C8EC8;}
+    .row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #F0F4F8;font-size:13px;}
+    .row:last-child{border-bottom:none;}
+    .row-lbl{color:#6B7E93;font-weight:600;}
+    .row-val{color:#182533;font-weight:500;text-align:right;max-width:60%;}
+    .btn{width:100%;padding:16px;border:none;border-radius:14px;font-size:17px;font-weight:700;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:10px;}
+    .btn-entrada{background:linear-gradient(135deg,#2E9E6B,#27875c);color:#fff;}
+    .btn-salida{background:linear-gradient(135deg,#E07B2A,#c4671f);color:#fff;}
+    .btn:disabled{opacity:.5;cursor:not-allowed;}
+    .btn:active{transform:scale(.97);}
+    .status-box{border-radius:14px;padding:18px;text-align:center;margin-bottom:14px;}
+    .status-entrada{background:rgba(46,158,107,.1);border:1.5px solid #2E9E6B;}
+    .status-salida{background:rgba(224,123,42,.1);border:1.5px solid #E07B2A;}
+    .status-completo{background:rgba(29,79,115,.1);border:1.5px solid #1D4F73;}
+    .status-icon{font-size:36px;margin-bottom:8px;}
+    .status-title{font-size:16px;font-weight:700;margin-bottom:4px;}
+    .status-time{font-size:22px;font-weight:700;font-family:monospace;}
+    .status-label{font-size:12px;color:#6B7E93;margin-top:4px;}
+    .loading{text-align:center;padding:40px 20px;color:#6B7E93;}
+    .loading-spinner{width:36px;height:36px;border:3px solid #E0E8F0;border-top-color:#3C8EC8;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px;}
+    .no-pedido{text-align:center;padding:30px 20px;}
+    .no-pedido-icon{font-size:48px;margin-bottom:12px;}
+    .no-pedido-title{font-size:17px;font-weight:700;color:#182533;margin-bottom:6px;}
+    .no-pedido-sub{font-size:13px;color:#6B7E93;line-height:1.5;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .check-row{display:flex;gap:14px;}
+    .check-col{flex:1;background:#F8FAFE;border-radius:10px;padding:12px;text-align:center;}
+    .check-col-lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6B7E93;margin-bottom:6px;font-weight:700;}
+    .check-col-val{font-size:16px;font-weight:700;font-family:monospace;color:#1D4F73;}
+    .check-col-empty{font-size:14px;color:#C5D3E0;}
+    .footer{text-align:center;font-size:11px;color:#9BADBF;padding:16px;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-sub">Luna Media Café · CEDIS</div>
+    <div class="header-title">Check de Entrega</div>
+    <div class="header-suc">📍 Paseo Jardines</div>
+  </div>
+
+  <div class="container">
+    <div id="loading" class="card loading">
+      <div class="loading-spinner"></div>
+      <div>Buscando pedido pendiente...</div>
+    </div>
+    <div id="content" style="display:none;"></div>
+  </div>
+
+  <div class="footer">Luna Media Café · Sistema CEDIS · Paseo Jardines</div>
+
+<script>
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz5AsvN3MhtI5Ol0H35m2flhuZIKg50yvWSevTlQJMifnYk9Eo_kvWGgihhr-BDtKwYWQ/exec';
+const SUCURSAL   = 'Paseo Jardines';
+const SUC_KEY    = 'paseo';
+const STORAGE_KEY = 'lmc_check_' + SUC_KEY;
+
+var estadoHoy = null;
+var pedidoActual = null;
+
+function getHoy() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function getHora() {
+  return new Date().toLocaleTimeString('es-MX', {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false});
+}
+
+function getFechaHora() {
+  return new Date().toLocaleString('es-MX', {hour12:false});
+}
+
+function loadEstado() {
+  try {
+    var raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    var data = JSON.parse(raw);
+    if (data.fecha !== getHoy()) {
+      localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+    return data;
+  } catch(e) { return null; }
+}
+
+function saveEstado(estado) {
+  estado.fecha = getHoy();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(estado));
+}
+
+function fmtMoney(val) {
+  var n = parseFloat(String(val).replace(/[$,]/g,'')) || 0;
+  return '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function getBadge(folio) {
+  if (!folio) return '';
+  if (folio.indexOf('-ASI') >= 0) return '<span class="badge badge-asi">Asignación CEDIS</span>';
+  if (folio.indexOf('-EXT') >= 0) return '<span class="badge badge-ext">Extraordinaria</span>';
+  return '<span class="badge badge-ord">Ordinaria</span>';
+}
+
+function renderSinPedido() {
+  document.getElementById('content').innerHTML = `
+    <div class="card no-pedido">
+      <div class="no-pedido-icon">📭</div>
+      <div class="no-pedido-title">Sin pedidos pendientes</div>
+      <div class="no-pedido-sub">No hay solicitudes de pedido activas para Paseo Jardines en este momento.</div>
+    </div>
+    <button class="btn" style="background:#E0E8F0;color:#6B7E93;" onclick="init()">🔄 Actualizar</button>
+  `;
+}
+
+function renderPedido(p, estado) {
+  var horaEntrada = estado ? estado.entrada : null;
+  var horaSalida  = estado ? estado.salida  : null;
+  var entradaHecha = !!horaEntrada;
+  var salidaHecha  = !!horaSalida;
+
+  var html = `
+    <div class="card">
+      <div class="card-title">Pedido en entrega</div>
+      <div class="folio">${p.folio}</div>
+      ${getBadge(p.folio)}
+      <div class="row"><span class="row-lbl">Sucursal</span><span class="row-val">Paseo Jardines</span></div>
+      <div class="row"><span class="row-lbl">Fecha SDP</span><span class="row-val">${p.fecha}</span></div>
+      <div class="row"><span class="row-lbl">Entrega requerida</span><span class="row-val">${p.fechaEntrega}</span></div>
+      <div class="row"><span class="row-lbl">Productos</span><span class="row-val">${p.numProductos}</span></div>
+      <div class="row"><span class="row-lbl">Total estimado</span><span class="row-val" style="font-weight:700;color:#1D4F73;">${fmtMoney(p.totalEstimado)}</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Registro de check</div>
+      <div class="check-row">
+        <div class="check-col">
+          <div class="check-col-lbl">🟢 Entrada</div>
+          ${horaEntrada ? `<div class="check-col-val">${horaEntrada}</div>` : '<div class="check-col-empty">—</div>'}
+        </div>
+        <div class="check-col">
+          <div class="check-col-lbl">🔴 Salida</div>
+          ${horaSalida ? `<div class="check-col-val">${horaSalida}</div>` : '<div class="check-col-empty">—</div>'}
+        </div>
+      </div>
+    </div>
+  `;
+
+  if (!entradaHecha) {
+    html += `<button class="btn btn-entrada" onclick="registrarCheck('entrada')">✅ Registrar Llegada</button>`;
+  } else if (!salidaHecha) {
+    html += `
+      <div class="status-box status-entrada">
+        <div class="status-icon">🟢</div>
+        <div class="status-title" style="color:#2E9E6B;">Llegada registrada</div>
+        <div class="status-time" style="color:#2E9E6B;">${horaEntrada}</div>
+        <div class="status-label">Da clic en Salida cuando termine la entrega</div>
+      </div>
+      <button class="btn btn-salida" onclick="registrarCheck('salida')">🏁 Registrar Salida</button>
+    `;
+  } else {
+    html += `
+      <div class="status-box status-completo">
+        <div class="status-icon">✅</div>
+        <div class="status-title" style="color:#1D4F73;">Entrega completada</div>
+        <div class="status-label">Entrada: <strong>${horaEntrada}</strong> · Salida: <strong>${horaSalida}</strong></div>
+      </div>
+    `;
+  }
+
+  document.getElementById('content').innerHTML = html;
+}
+
+function registrarCheck(tipo) {
+  var hora = getHora();
+  var fechaHora = getFechaHora();
+  var btn = document.querySelector('.btn-entrada, .btn-salida');
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Registrando...'; }
+
+  // Save locally first
+  var estado = loadEstado() || {};
+  estado[tipo] = hora;
+  estado.folio = pedidoActual ? pedidoActual.folio : '';
+  estado.sucursal = SUCURSAL;
+  saveEstado(estado);
+
+  // Send to Apps Script
+  var url = SCRIPT_URL + '?tipo=check_entrega&sucursal=' + encodeURIComponent(SUCURSAL)
+    + '&check=' + tipo
+    + '&hora=' + encodeURIComponent(hora)
+    + '&fechaHora=' + encodeURIComponent(fechaHora)
+    + '&folio=' + encodeURIComponent(estado.folio || '');
+
+  fetch(url)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      estadoHoy = estado;
+      renderPedido(pedidoActual, estadoHoy);
+    })
+    .catch(function() {
+      // Even if AS fails, local state is saved
+      estadoHoy = estado;
+      renderPedido(pedidoActual, estadoHoy);
+    });
+}
+
+function init() {
+  estadoHoy = loadEstado();
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('content').style.display = 'none';
+
+  // Fetch pending SDP
+  fetch(SCRIPT_URL + '?tipo=pedidos_pendientes&sucursal=' + encodeURIComponent(SUCURSAL))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('content').style.display = 'block';
+
+      if (!data || !data.length) {
+        renderSinPedido();
+        return;
+      }
+      // Get most recent pending
+      pedidoActual = data[0];
+      // If estado exists for this folio, restore it
+      if (estadoHoy && estadoHoy.folio !== pedidoActual.folio) {
+        estadoHoy = null;
+        localStorage.removeItem(STORAGE_KEY);
+      }
+      renderPedido(pedidoActual, estadoHoy);
+    })
+    .catch(function() {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('content').style.display = 'block';
+      document.getElementById('content').innerHTML = `
+        <div class="card no-pedido">
+          <div class="no-pedido-icon">⚠️</div>
+          <div class="no-pedido-title">Error de conexión</div>
+          <div class="no-pedido-sub">Verifica tu conexión a internet e intenta de nuevo.</div>
+        </div>
+        <button class="btn" style="background:#E0E8F0;color:#6B7E93;" onclick="init()">🔄 Reintentar</button>
+      `;
+    });
+}
+
+// Auto-refresh every 30 seconds if waiting
+setInterval(function() {
+  var e = loadEstado();
+  if (!e || !e.salida) init();
+}, 30000);
+
+init();
+</script>
+</body>
+</html>

@@ -2518,13 +2518,14 @@ function loginSubmit(){
         espejoBloquear();
         espejoPollStart();
       } else {
-        // Register session and enter normal mode
+        // Register session FIRST, then show portal after confirmation
         sesionEspejo = false;
         sesionActual.modoLectura = false;
-        sesionRegistrar(email);
-        document.getElementById('login-screen').style.display = 'none';
-        document.getElementById('app-root').style.display = 'block';
-        aplicarRol();
+        sesionRegistrar(email, function(){
+          document.getElementById('login-screen').style.display = 'none';
+          document.getElementById('app-root').style.display = 'block';
+          aplicarRol();
+        });
       }
     })
     .catch(function(err){
@@ -3190,13 +3191,19 @@ var sesionEspejo = false;
 var espejoTimer = null;
 var espejoEstado = {};
 
-function sesionRegistrar(email){
+function sesionRegistrar(email, callback){
   var tabId = sesionActual ? (sesionActual.tabId || '') : '';
   console.log('Registering session for:', email, 'tabId:', tabId);
   fetch(SCRIPT_URL + '?tipo=sesion_registrar&email=' + encodeURIComponent(email) + '&tabId=' + encodeURIComponent(tabId) + '&ts=' + Date.now())
     .then(function(r){ return r.json(); })
-    .then(function(d){ console.log('Session registered OK:', JSON.stringify(d)); })
-    .catch(function(e){ console.log('Session register error:', e); });
+    .then(function(d){
+      console.log('Session registered OK:', JSON.stringify(d));
+      if(callback) callback();
+    })
+    .catch(function(e){
+      console.log('Session register error:', e);
+      if(callback) callback(); // proceed anyway
+    });
   // Heartbeat cada 60 segundos
   setInterval(function(){
     fetch(SCRIPT_URL + '?tipo=sesion_registrar&email=' + encodeURIComponent(email) + '&tabId=' + encodeURIComponent(tabId) + '&ts=' + Date.now())
@@ -3204,20 +3211,9 @@ function sesionRegistrar(email){
   }, 60000);
   // Close session on page close/refresh
   window.addEventListener('beforeunload', function(){
-    // Use sendBeacon for reliable delivery on page close
     var url = SCRIPT_URL + '?tipo=sesion_cerrar&email=' + encodeURIComponent(email);
     if(navigator.sendBeacon) navigator.sendBeacon(url);
     else fetch(url).catch(function(){});
-  });
-  // Also close on visibility change (tab hidden for >5min)
-  document.addEventListener('visibilitychange', function(){
-    if(document.hidden){
-      setTimeout(function(){
-        if(document.hidden){
-          fetch(SCRIPT_URL + '?tipo=sesion_cerrar&email=' + encodeURIComponent(email)).catch(function(){});
-        }
-      }, 5 * 60 * 1000);
-    }
   });
 }
 

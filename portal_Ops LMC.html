@@ -3379,8 +3379,150 @@ function telefonoEliminar(tel){
 }
 
 // ══ TRANSFERENCIAS INTERNAS ══
+var transPedido = {}; // code -> {qty, nombre, precio, pres}
+
 function abrirTransferencias(){
-  alert('Módulo de Transferencias Internas — Próximamente disponible.');
+  // Pre-select emisora based on logged-in user's sucursal
+  var emisEl = document.getElementById('trans-emisora');
+  if(sesionActual && sesionActual.sucursal && emisEl){
+    emisEl.value = sesionActual.sucursal;
+    // Disable emisora if not admin
+    emisEl.disabled = sesionActual.rol !== 'admin';
+  }
+  transPedido = {};
+  document.getElementById('trans-step1').style.display='block';
+  document.getElementById('trans-ok').style.display='none';
+  document.getElementById('trans-inventario-wrap').style.display='none';
+  document.getElementById('trans-prod-lista').innerHTML='';
+  document.getElementById('trans-total').textContent='$0.00';
+  document.getElementById('modal-transferencia').style.display='block';
+  if(emisEl && emisEl.value) transCargarInventario();
+}
+
+function cerrarTransferencia(){
+  document.getElementById('modal-transferencia').style.display='none';
+}
+
+function transCargarInventario(){
+  var emisora = document.getElementById('trans-emisora').value;
+  if(!emisora) return;
+  document.getElementById('trans-loading').style.display='block';
+  document.getElementById('trans-inventario-wrap').style.display='none';
+  transPedido = {};
+
+  fetch(SCRIPT_URL + '?tipo=inventario_existencia&sucursal=' + encodeURIComponent(emisora))
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      document.getElementById('trans-loading').style.display='none';
+      if(!data || !data.conteo){ 
+        document.getElementById('trans-prod-lista').innerHTML='<div style="padding:20px;text-align:center;color:var(--grey-txt);">No hay inventario registrado para esta sucursal.</div>';
+        document.getElementById('trans-inventario-wrap').style.display='block';
+        return;
+      }
+      // Build product map from conteo
+      var existencia = {};
+      data.conteo.split(';').forEach(function(item){
+        var parts = item.split('|');
+        if(parts[0] && parseFloat(parts[1]||0) > 0) existencia[parts[0]] = parseFloat(parts[1]);
+      });
+      transRenderProductos(existencia, emisora);
+      document.getElementById('trans-inventario-wrap').style.display='block';
+    })
+    .catch(function(){
+      document.getElementById('trans-loading').style.display='none';
+      document.getElementById('trans-inventario-wrap').style.display='block';
+      document.getElementById('trans-prod-lista').innerHTML='<div style="padding:20px;text-align:center;color:#D4504A;">Error al cargar inventario.</div>';
+    });
+}
+
+function transRenderProductos(existencia, emisora){
+  var cat = (CATALOGO && CATALOGO.length > 0) ? CATALOGO : CATALOGO_LOCAL;
+  // Filter by sucursal type
+  var prods = cat.filter(function(p){
+    var esPost = emisora === 'Postrería' || emisora === 'Postreria';
+    if(esPost) return p.cat === 'POSTRERIA INSUMOS';
+    return p.cat !== 'POSTRERIA INSUMOS';
+  }).filter(function(p){ return existencia[p.code] > 0; });
+
+  if(!prods.length){
+    document.getElementById('trans-prod-lista').innerHTML='<div style="padding:20px;text-align:center;color:var(--grey-txt);">No hay productos con existencia disponibles.</div>';
+    return;
+  }
+
+  var h = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+  h += '<tr style="background:var(--blue-dkr);"><th style="padding:8px 12px;color:rgba(255,255,255,.8);text-align:left;font-size:11px;">Producto</th><th style="padding:8px 12px;color:rgba(255,255,255,.8);text-align:center;font-size:11px;">Existencia</th><th style="padding:8px 12px;color:rgba(255,255,255,.8);text-align:right;font-size:11px;">Precio</th><th style="padding:8px 12px;color:rgba(255,255,255,.8);text-align:center;font-size:11px;">Transferir</th></tr>';
+
+  prods.forEach(function(p, i){
+    var exist = existencia[p.code] || 0;
+    var isKg = p.pres && (p.pres.toLowerCase().indexOf('kg')>=0||p.pres.toLowerCase().indexOf('kilo')>=0);
+    var step = isKg ? '0.1' : '1';
+    h += '<tr style="background:' + (i%2===0?'#fff':'#f5f8fc') + ';border-top:1px solid var(--grey-lt);">';
+    h += '<td style="padding:8px 12px;"><div style="font-weight:600;">' + p.name + '</div><div style="font-size:11px;color:var(--grey-txt);font-family:monospace;">' + p.code + ' · ' + (p.pres||'') + '</div></td>';
+    h += '<td style="padding:8px 12px;text-align:center;font-weight:600;color:var(--blue);">' + exist + '</td>';
+    h += '<td style="padding:8px 12px;text-align:right;">' + fmtMoney(p.precio||0) + '</td>';
+    h += '<td style="padding:8px 12px;text-align:center;"><input type="number" min="0" max="' + exist + '" step="' + step + '" value="0" data-code="' + p.code + '" data-nombre="' + p.name + '" data-precio="' + (p.precio||0) + '" data-exist="' + exist + '" onchange="transSetQty(this)" style="width:70px;padding:5px;border:1px solid var(--grey-lt);border-radius:6px;text-align:center;font-size:13px;"></td>';
+    h += '</tr>';
+  });
+  h += '</table>';
+  document.getElementById('trans-prod-lista').innerHTML = h;
+  transActualizarTotal();
+}
+
+function transSetQty(inp){
+  var code   = inp.getAttribute('data-code');
+  var nombre = inp.getAttribute('data-nombre');
+  var precio = parseFloat(inp.getAttribute('data-precio')) || 0;
+  var exist  = parseFloat(inp.getAttribute('data-exist')) || 0;
+  var qty    = parseFloat(inp.value) || 0;
+  // Cap at existencia
+  if(qty > exist){ qty = exist; inp.value = exist; }
+  if(qty <= 0){ delete transPedido[code]; }
+  else { transPedido[code] = {qty:qty, nombre:nombre, precio:precio}; }
+  transActualizarTotal();
+}
+
+function transActualizarTotal(){
+  var total = 0;
+  Object.values(transPedido).forEach(function(p){ total += p.qty * p.precio; });
+  document.getElementById('trans-total').textContent = fmtMoney(total);
+}
+
+function transEnviar(){
+  var emisora   = document.getElementById('trans-emisora').value;
+  var receptora = document.getElementById('trans-receptora').value;
+  var obs       = document.getElementById('trans-obs').value;
+
+  if(!emisora)  { alert('Selecciona la sucursal emisora.'); return; }
+  if(!receptora){ alert('Selecciona la sucursal receptora.'); return; }
+  if(emisora === receptora){ alert('La emisora y receptora no pueden ser la misma.'); return; }
+  if(!Object.keys(transPedido).length){ alert('Selecciona al menos un producto a transferir.'); return; }
+
+  var total = 0;
+  Object.values(transPedido).forEach(function(p){ total += p.qty * p.precio; });
+  var folio = 'TRA-' + (Date.now()+3600000).toString().slice(-6);
+  var ts    = new Date(Date.now()+3600000).toLocaleString('es-MX',{hour12:false});
+
+  var productosStr = Object.keys(transPedido).map(function(code){
+    var p = transPedido[code];
+    return code + '|' + p.nombre + '||$' + p.precio.toFixed(2) + '|' + p.qty + 'x|$' + (p.qty*p.precio).toFixed(2);
+  }).join(';');
+
+  iframePost(SCRIPT_URL, {
+    tipo:           'transferencia',
+    folio:          folio,
+    timestamp:      ts,
+    emisora:        emisora,
+    receptora:      receptora,
+    totalEstimado:  fmtMoney(total),
+    numProductos:   Object.keys(transPedido).length,
+    productos:      productosStr,
+    observaciones:  obs,
+    enviadoPor:     sesionActual ? sesionActual.nombre : ''
+  }, function(){
+    document.getElementById('trans-folio-ok').textContent = folio;
+    document.getElementById('trans-step1').style.display='none';
+    document.getElementById('trans-ok').style.display='block';
+  });
 }
 </script>
 
@@ -3506,6 +3648,73 @@ function abrirTransferencias(){
 </div>
 
 
+
+<!-- MODAL: TRANSFERENCIAS INTERNAS -->
+<div id="modal-transferencia" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9100;overflow-y:auto;">
+  <div style="background:#fff;border-radius:16px;padding:0;width:100%;max-width:700px;margin:20px auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,#1D4F73,#3C8EC8);padding:20px 24px;border-radius:16px 16px 0 0;display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <div style="color:rgba(255,255,255,.7);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;">Luna Media Café</div>
+        <div style="color:#fff;font-size:20px;font-weight:700;">🔄 Transferencia entre Sucursales</div>
+      </div>
+      <button onclick="cerrarTransferencia()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:600;">✕ Cerrar</button>
+    </div>
+    <div style="padding:24px;" id="trans-body">
+      <!-- Step 1: Select emisora/receptora -->
+      <div id="trans-step1">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+          <div class="field">
+            <label>Sucursal emisora <span style="color:#D4504A;">*</span></label>
+            <div class="sel-wrap"><select id="trans-emisora" onchange="transCargarInventario()">
+              <option value="">Selecciona...</option>
+              <option value="Ávila Camacho">Ávila Camacho</option>
+              <option value="Paseo Jardines">Paseo Jardines</option>
+              <option value="Postrería">Postrería</option>
+            </select></div>
+          </div>
+          <div class="field">
+            <label>Sucursal receptora <span style="color:#D4504A;">*</span></label>
+            <div class="sel-wrap"><select id="trans-receptora">
+              <option value="">Selecciona...</option>
+              <option value="Ávila Camacho">Ávila Camacho</option>
+              <option value="Paseo Jardines">Paseo Jardines</option>
+              <option value="Postrería">Postrería</option>
+            </select></div>
+          </div>
+        </div>
+        <div id="trans-inventario-wrap" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <div style="font-size:13px;font-weight:600;color:var(--dark);">Productos disponibles en inventario</div>
+            <div style="font-size:12px;color:var(--grey-txt);">Solo productos con existencia &gt; 0</div>
+          </div>
+          <div style="max-height:320px;overflow-y:auto;border:1px solid var(--grey-lt);border-radius:10px;" id="trans-prod-lista"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding:12px 16px;background:var(--blue-lt);border-radius:10px;">
+            <div style="font-size:13px;font-weight:600;color:var(--dark);">Total transferencia</div>
+            <div style="font-size:20px;font-weight:700;color:var(--blue-dk);" id="trans-total">$0.00</div>
+          </div>
+          <div class="field" style="margin-top:14px;">
+            <label>Observaciones</label>
+            <input type="text" id="trans-obs" placeholder="Motivo o nota de la transferencia (opcional)" style="width:100%;">
+          </div>
+          <button onclick="transEnviar()" style="width:100%;margin-top:16px;background:linear-gradient(135deg,#1D4F73,#3C8EC8);color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:700;cursor:pointer;">Enviar Transferencia</button>
+        </div>
+        <div id="trans-loading" style="display:none;text-align:center;padding:30px;color:var(--grey-txt);">
+          <div style="width:32px;height:32px;border:3px solid #E0E8F0;border-top-color:#3C8EC8;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px;"></div>
+          Cargando inventario...
+        </div>
+      </div>
+      <!-- Success screen -->
+      <div id="trans-ok" style="display:none;text-align:center;padding:40px 20px;">
+        <div style="font-size:56px;margin-bottom:16px;">✅</div>
+        <div style="font-size:20px;font-weight:700;color:var(--dark);margin-bottom:8px;">Transferencia enviada</div>
+        <div style="font-size:14px;color:var(--grey-txt);margin-bottom:8px;">Folio: <span id="trans-folio-ok" style="font-family:monospace;font-weight:700;color:var(--blue);"></span></div>
+        <div style="font-size:13px;color:var(--grey-txt);">Se enviaron notificaciones a ambas sucursales, Admin y CEDIS.</div>
+        <button onclick="cerrarTransferencia()" style="margin-top:20px;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
 </div><!-- end app-root -->
 <div id="inv-autosave-ind" style="position:fixed;bottom:20px;right:20px;background:rgba(46,158,107,.95);color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;z-index:99999;opacity:0;transition:opacity .6s;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.2);"></div>
 </body>

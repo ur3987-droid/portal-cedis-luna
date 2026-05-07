@@ -284,16 +284,8 @@ textarea{resize:vertical;min-height:72px;line-height:1.6;}
     <div class="ntab" id="ntab1" onclick="showMod(1)">&#128722; Solicitud de Pedido</div>
     <div class="ntab" id="ntab3" onclick="showMod(3)">&#128203; Evaluacion de Entrega</div>
     <div class="ntab" id="ntab5" onclick="showMod(5)" style="display:none;">&#128179; Compras Conciliadas</div>
-
-
-
-
-
-
-
-
-
-
+    <button id="btn-transferencias" onclick="abrirTransferencias()" style="display:none;background:#E8F7F1;color:#2E9E6B;border:1px solid rgba(46,158,107,.3);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;margin:auto 0 auto 8px;">🔄 Transferencias</button>
+    <button id="btn-tel-admin" onclick="document.getElementById('tel-admin-panel').style.display='block';document.getElementById('tel-admin-overlay').style.display='block';telefonosCargar();" style="display:none;background:var(--blue-lt);color:var(--blue);border:1px solid rgba(60,142,200,.3);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;margin:auto 8px auto 4px;">📱 Teléfonos</button>
   </div>
 </div>
 
@@ -1574,16 +1566,13 @@ function showMod(n) {
   document.getElementById('ntab'+n).classList.add('active');
   window.scrollTo({top:0,behavior:'smooth'});
   if(n===4) histCargar();
-  // Publish module switch for mirror
-  if(!sesionEspejo && sesionActual){
-    var modNames = {1:'Solicitud de Pedido', 2:'Inventario', 3:'Evaluacion de Entrega', 4:'Historial Inventarios', 5:'Compras Conciliadas'};
-    espejoPublicarEstado(modNames[n]||'', 'Modulo abierto', {});
-  }
   if(n===5) conciliacionCargar();
+  if(n===7) histSdpCargar();
   // Show phone admin button only for admin
   var btnTel = document.getElementById('btn-tel-admin');
   if(btnTel && sesionActual) btnTel.style.display = sesionActual.rol==='admin' ? 'block' : 'none';
-  if(n===7) histSdpCargar();
+  var btnTr = document.getElementById('btn-transferencias');
+  if(btnTr) btnTr.style.display = 'block';
 }
 
 // ══ IFRAME POST helper ══
@@ -1725,6 +1714,7 @@ function invRender(){
   h += '<div style="background:var(--blue-dkr);border-radius:12px;padding:14px 18px;margin-top:8px;display:flex;justify-content:space-between;align-items:center;">';
   h += '<div style="font-family:Bebas Neue,sans-serif;font-size:18px;letter-spacing:.07em;color:#fff;">TOTAL GENERAL INVENTARIO</div>';
   h += '<div id="inv-total-general" style="font-family:Bebas Neue,sans-serif;font-size:22px;letter-spacing:.07em;color:#fff;">$0.00</div>';
+  h += '<div id="inv-items-count" style="font-size:13px;color:rgba(255,255,255,.75);margin-top:4px;">0 ítems</div>';
   h += '</div>';
   document.getElementById('inv-catalog').innerHTML = h;
   invUpdateTotals();
@@ -2280,6 +2270,10 @@ function evRenderProds(){
     var sub=p.precio*p.qty;
     h+='<div style="display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid var(--grey-lt);gap:12px;'+(rec?'':'opacity:.5;background:#FEF5F5;')+'">';
     h+='<input type="checkbox" '+(rec?'checked':'')+' data-code="'+p.code+'" onchange="evToggleChk(this)" style="width:18px;height:18px;accent-color:var(--blue);cursor:pointer;flex-shrink:0;">';
+    // Quantity received input (allows fractions for Kg/weight products)
+    var isKg = p.pres && (p.pres.toLowerCase().indexOf('kg')>=0||p.pres.toLowerCase().indexOf('kilo')>=0);
+    var stepVal = isKg ? '0.1' : '1';
+    h+='<input type="number" min="0" step="'+stepVal+'" value="'+evRecibidos[p.code].qty+'" data-code="'+p.code+'" onchange="evSetQty(this)" style="width:60px;padding:4px 6px;border:1px solid var(--grey-lt);border-radius:6px;font-size:12px;text-align:center;">';
     h+='<div style="flex:1;">';
     h+='<div style="font-size:13px;font-weight:600;">'+p.nombre+'</div>';
     h+='<div style="font-size:11px;color:var(--grey-txt);">'+p.code+' - '+p.pres+'</div>';
@@ -2332,7 +2326,19 @@ function evBuildSummary5(){
 function evSubmit(){
   var suc=document.getElementById('ev-suc').value,info=EV_SUCS[suc]||{};
   var orig=0,real=0,recArr=[],faltArr=[];
-  evProductos.forEach(function(p){var rec=evRecibidos[p.code]?evRecibidos[p.code].rec:true;var sub=p.precio*p.qty;orig+=sub;if(rec){real+=sub;recArr.push(p.code+'-'+p.nombre);}else faltArr.push(p.code+'-'+p.nombre);});
+  evProductos.forEach(function(p){
+    var er=evRecibidos[p.code]||{rec:true,qty:p.qty};
+    var qtyRec=er.rec?(er.qty||p.qty):0;
+    var sub=p.precio*p.qty;
+    var subRec=p.precio*qtyRec;
+    orig+=sub;
+    if(er.rec&&qtyRec>0){
+      real+=subRec;
+      recArr.push(p.code+'-'+p.nombre+(qtyRec!==p.qty?' ('+qtyRec+'/'+p.qty+')':''));
+    } else {
+      faltArr.push(p.code+'-'+p.nombre);
+    }
+  });
   var payload={tipo:'evaluacion',folio:evFolioActual,timestamp:new Date(Date.now()+3600000).toLocaleString('es-MX', {hour12:false}),sucursal:suc,correoSuc:info.correo||document.getElementById('ev-email').value,gerente:info.gerente||'',fecha:document.getElementById('ev-fecha').value,horaEntrada:document.getElementById('ev-horaIn').value,horaSalida:document.getElementById('ev-horaOut').value,estado:(document.querySelector('input[name="ev-estado"]:checked')||{value:''}).value,calidad:(document.querySelector('input[name="ev-calidad"]:checked')||{value:''}).value,calificacion:document.getElementById('ev-rating').value,comentarios:document.getElementById('ev-comentarios').value,totalOriginal:'$'+orig.toFixed(2),totalReal:'$'+real.toFixed(2),productosRecibidos:recArr.join(';'),faltantes:faltArr.join(';')};
   document.getElementById('loadingOverlay').classList.add('show');document.getElementById('loadingTxt').textContent='Guardando evaluacion...';
   iframePost(SCRIPT_URL,payload,function(){
@@ -2494,51 +2500,10 @@ function loginSubmit(){
     return;
   }
   sesionActual = {email:email, rol:user.rol, sucursal:user.sucursal, nombre:user.nombre};
-  // Generate unique tab ID to distinguish this browser tab/device
-  var tabId = sessionStorage.getItem('lmc_tab_id');
-  if(!tabId){ tabId = 'tab_' + Date.now() + '_' + Math.random().toString(36).slice(2,7); sessionStorage.setItem('lmc_tab_id', tabId); }
-  sesionActual.tabId = tabId;
-  // Check if another session is already active for this user (from a DIFFERENT tab/device)
-  console.log('Checking session for:', email, 'tabId:', tabId);
-  fetch(SCRIPT_URL + '?tipo=sesion_check&email=' + encodeURIComponent(email) + '&tabId=' + encodeURIComponent(tabId))
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      console.log('sesion_check result:', JSON.stringify(data));
-      if(data && data.activa && data.tabId !== tabId){
-        // Enter mirror/read-only mode
-        sesionEspejo = true;
-        sesionActual.modoLectura = true;
-        document.getElementById('login-screen').style.display = 'none';
-        document.getElementById('app-root').style.display = 'block';
-        document.querySelectorAll('.ntab').forEach(function(t){ t.style.display='none'; });
-        document.querySelectorAll('.module').forEach(function(m){ m.classList.remove('active'); });
-        var ev = document.getElementById('espejo-view');
-        if(ev) ev.style.display = 'block';
-        espejoMostrarBanner();
-        espejoBloquear();
-        espejoPollStart();
-      } else {
-        // Register session FIRST, then show portal after confirmation
-        sesionEspejo = false;
-        sesionActual.modoLectura = false;
-        sesionRegistrar(email, function(){
-          document.getElementById('login-screen').style.display = 'none';
-          document.getElementById('app-root').style.display = 'block';
-          aplicarRol();
-        });
-      }
-    })
-    .catch(function(err){
-      console.log('sesion_check error:', err);
-      sesionEspejo = false;
-      sesionActual.modoLectura = false;
-      sesionRegistrar(email);
-      document.getElementById('login-screen').style.display = 'none';
-      document.getElementById('app-root').style.display = 'block';
-      aplicarRol();
-    });
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-root').style.display = 'block';
+  aplicarRol();
 }
-
 function aplicarRol(){
 
   var rol = sesionActual.rol;
@@ -2546,9 +2511,11 @@ function aplicarRol(){
   var btnLimpiar = document.getElementById('btn-limpiar-hist');
   if(btnLimpiar) btnLimpiar.style.display = rol === 'admin' ? 'inline-block' : 'none';
   // Show/hide tabs based on role
-  // Show phone admin button for admin
+  // Show admin buttons
   var btnTelRol = document.getElementById('btn-tel-admin');
   if(btnTelRol) btnTelRol.style.display = rol === 'admin' ? 'block' : 'none';
+  var btnTrans = document.getElementById('btn-transferencias');
+  if(btnTrans) btnTrans.style.display = 'block'; // visible for all roles
   // Admin tiene acceso universal a todas las pestanas presentes y futuras
   var tabsPermitidos = {
     'ntab4': ['admin','cedis','sucursal'],  // Historial
@@ -2586,8 +2553,7 @@ function aplicarRol(){
     if(sdpSel){ sdpSel.disabled = false; sdpSel.value = 'CEDIS'; setSucursal(); }
   }
 
-  // Mirror mode already handled in loginSubmit
-  if(sesionEspejo) return;
+
 
   // Show first available tab
   if(rol === 'cedis'){
@@ -2917,7 +2883,12 @@ function catEditGuardar(){
 
 function cargarExistenciaInventario(sucursal, cb){
   INVENTARIO_EXISTENCIA = {};
-  fetch(SCRIPT_URL + '?tipo=inventario_existencia&sucursal=' + encodeURIComponent(sucursal))
+  // Normalize sucursal name to match what was saved in inventario
+  var sucNorm = sucursal
+    .replace('ÁVILA CAMACHO','Ávila Camacho').replace('AVILA CAMACHO','Ávila Camacho')
+    .replace('PASEO JARDINES','Paseo Jardines')
+    .replace('POSTRERÍA','Postrería').replace('POSTRERIA','Postrería');
+  fetch(SCRIPT_URL + '?tipo=inventario_existencia&sucursal=' + encodeURIComponent(sucNorm))
     .then(function(r){ return r.json(); })
     .then(function(data){
       if(data && data.conteo){
@@ -3186,154 +3157,10 @@ function conciliacionCancelarConfirmar(){
   if(h2) h2.value = hoyStr;
 })();
 
-// ══ SESION ESPEJO — MODO LECTURA ══
 var sesionEspejo = false;
-var espejoTimer = null;
-var espejoEstado = {};
 
-function sesionRegistrar(email, callback){
-  var tabId = sesionActual ? (sesionActual.tabId || '') : '';
-  console.log('Registering session for:', email, 'tabId:', tabId);
-  fetch(SCRIPT_URL + '?tipo=sesion_registrar&email=' + encodeURIComponent(email) + '&tabId=' + encodeURIComponent(tabId) + '&ts=' + Date.now())
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      console.log('Session registered OK:', JSON.stringify(d));
-      if(callback) callback();
-    })
-    .catch(function(e){
-      console.log('Session register error:', e);
-      if(callback) callback(); // proceed anyway
-    });
-  // Heartbeat cada 60 segundos
-  setInterval(function(){
-    fetch(SCRIPT_URL + '?tipo=sesion_registrar&email=' + encodeURIComponent(email) + '&tabId=' + encodeURIComponent(tabId) + '&ts=' + Date.now())
-      .catch(function(){});
-  }, 60000);
-  // Close session on page close/refresh
-  window.addEventListener('beforeunload', function(){
-    var url = SCRIPT_URL + '?tipo=sesion_cerrar&email=' + encodeURIComponent(email);
-    if(navigator.sendBeacon) navigator.sendBeacon(url);
-    else fetch(url).catch(function(){});
-  });
-}
 
-function espejoMostrarBanner(){
-  var banner = document.getElementById('espejo-banner');
-  if(!banner){
-    banner = document.createElement('div');
-    banner.id = 'espejo-banner';
-    banner.style.cssText = 'position:fixed;top:0;left:0;width:100%;background:#1D4F73;color:#fff;padding:8px 16px;font-size:13px;font-weight:600;z-index:99998;display:flex;align-items:center;justify-content:space-between;';
-    banner.innerHTML = '<span>&#128065; Modo solo lectura — Sesion espejo activa. No puedes realizar cambios.</span>' +
-      '<span id="espejo-estado" style="font-size:11px;opacity:.7;">Sincronizando...</span>';
-    document.body.prepend(banner);
-    // Push content down
-    var root = document.getElementById('app-root');
-    if(root) root.style.paddingTop = '36px';
-  }
-}
 
-function espejoPollStart(){
-  if(espejoTimer) clearInterval(espejoTimer);
-  espejoActualizar();
-  espejoTimer = setInterval(espejoActualizar, 10000); // cada 10 segundos
-}
-
-function espejoActualizar(){
-  if(!sesionActual) return;
-  fetch(SCRIPT_URL + '?tipo=espejo_estado&email=' + encodeURIComponent(sesionActual.email))
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      espejoEstado = data || {};
-      espejoRenderEstado();
-      var ind = document.getElementById('espejo-estado');
-      if(ind) ind.textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    }).catch(function(){});
-}
-
-function espejoRenderEstado(){
-  var wrap = document.getElementById('espejo-contenido');
-  if(!wrap) return;
-  var modulo = espejoEstado.modulo || '';
-  var paso   = espejoEstado.paso || '';
-  var datos  = espejoEstado.datos || {};
-  if(!modulo){
-    wrap.innerHTML = '<div style="text-align:center;padding:60px;">' +
-      '<div style="font-size:40px;margin-bottom:16px;">&#128065;</div>' +
-      '<div style="font-size:16px;font-weight:600;color:var(--dark);margin-bottom:8px;">Esperando actividad...</div>' +
-      '<div style="font-size:13px;color:var(--grey-txt);">En cuanto el usuario inicie una tarea aparecera aqui en tiempo real.</div>' +
-      '<div style="font-size:12px;color:var(--blue);margin-top:12px;">Actualizando cada 10 segundos</div>' +
-      '</div>';
-    return;
-  }
-  
-  var h = '<div style="background:var(--blue-lt);border-radius:12px;padding:20px;margin-bottom:16px;">' +
-    '<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--grey-txt);margin-bottom:6px;">Modulo activo</div>' +
-    '<div style="font-size:18px;font-weight:700;color:var(--blue-dk);">' + modulo + '</div>' +
-    '<div style="font-size:13px;color:var(--grey-txt);margin-top:4px;">' + paso + '</div>' +
-    '</div>';
-
-  if(datos.sucursal) h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">' +
-    '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:8px;padding:8px 14px;font-size:13px;"><span style="color:var(--grey-txt);">Sucursal: </span><strong>' + datos.sucursal + '</strong></div>' +
-    (datos.gerente ? '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:8px;padding:8px 14px;font-size:13px;"><span style="color:var(--grey-txt);">Responsable: </span><strong>' + datos.gerente + '</strong></div>' : '') +
-    (datos.folio ? '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:8px;padding:8px 14px;font-size:13px;font-family:monospace;font-weight:700;color:var(--blue);">' + datos.folio + '</div>' : '') +
-    '</div>';
-
-  if(modulo === 'Inventario' && datos.productos && datos.productos.length){
-    h += '<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--grey-txt);margin-bottom:8px;">Progreso del conteo</div>';
-    h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
-    h += '<tr style="background:var(--blue-dkr);"><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:left;">Codigo</th><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:left;">Producto</th><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:right;">Cantidad</th></tr>';
-    datos.productos.forEach(function(p, i){
-      var qty = parseFloat(p.qty) || 0;
-      var color = qty === 0 ? '#D4504A' : '#2E9E6B';
-      h += '<tr style="background:' + (i%2===0?'#fff':'#f5f8fc') + '">' +
-        '<td style="padding:6px 10px;font-family:monospace;color:var(--blue);">' + p.code + '</td>' +
-        '<td style="padding:6px 10px;">' + p.name + '</td>' +
-        '<td style="padding:6px 10px;text-align:right;font-weight:700;color:' + color + ';">' + (qty > 0 ? qty : '—') + '</td></tr>';
-    });
-    h += '</table></div>';
-  }
-
-  if(modulo === 'Solicitud de Pedido' && datos.productos && datos.productos.length){
-    h += '<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--grey-txt);margin-bottom:8px;">Productos en la solicitud</div>';
-    h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
-    h += '<tr style="background:var(--blue-dkr);"><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:left;">Codigo</th><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:left;">Producto</th><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:right;">Cantidad</th></tr>';
-    datos.productos.forEach(function(p, i){
-      h += '<tr style="background:' + (i%2===0?'#fff':'#f5f8fc') + '">' +
-        '<td style="padding:6px 10px;font-family:monospace;color:var(--blue);">' + p.code + '</td>' +
-        '<td style="padding:6px 10px;">' + p.name + '</td>' +
-        '<td style="padding:6px 10px;text-align:right;font-weight:700;">' + p.qty + '</td></tr>';
-    });
-    h += '</table></div>';
-  }
-
-  wrap.innerHTML = h;
-}
-
-function espejoPublicarEstado(modulo, paso, datos){
-  if(!sesionActual || sesionEspejo) return; // no publish if in mirror mode
-  fetch(SCRIPT_URL + '?tipo=espejo_publicar&email=' + encodeURIComponent(sesionActual.email) +
-    '&modulo=' + encodeURIComponent(modulo) +
-    '&paso=' + encodeURIComponent(paso) +
-    '&datos=' + encodeURIComponent(JSON.stringify(datos)))
-    .catch(function(){});
-}
-
-// Block all form interactions in mirror mode
-function espejoBloquear(){
-  if(!sesionEspejo) return;
-  document.addEventListener('click', function(e){
-    var targets = ['button','input','select','textarea','a'];
-    var el = e.target;
-    while(el){
-      if(targets.indexOf(el.tagName.toLowerCase()) >= 0){
-        e.preventDefault(); e.stopPropagation();
-        espejoMostrarBanner();
-        return;
-      }
-      el = el.parentElement;
-    }
-  }, true);
-}
 
 
 function cargarCatalogoDinamico(cb) {
@@ -3550,6 +3377,11 @@ function telefonoEliminar(tel){
     .then(function(){ telefonosCargar(); })
     .catch(function(){ alert('Error de conexión.'); });
 }
+
+// ══ TRANSFERENCIAS INTERNAS ══
+function abrirTransferencias(){
+  alert('Módulo de Transferencias Internas — Próximamente disponible.');
+}
 </script>
 
 <!-- MOD4: HISTORIAL INVENTARIOS -->
@@ -3674,69 +3506,6 @@ function telefonoEliminar(tel){
 </div>
 
 
-<!-- ESPEJO: Vista solo lectura -->
-<!-- ADMIN: Gestión teléfonos CEDIS -->
-<div id="tel-admin-panel" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:16px;padding:24px;width:100%;max-width:420px;z-index:9999;box-shadow:0 20px 60px rgba(0,0,0,.3);">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-    <h3 style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--dark);">📱 Teléfonos Autorizados</h3>
-    <button onclick="document.getElementById('tel-admin-panel').style.display='none'" style="background:var(--grey-lt);border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px;">✕ Cerrar</button>
-  </div>
-  <p style="font-size:12px;color:var(--grey-txt);margin-bottom:14px;">Solo estos teléfonos pueden hacer check de entrega desde los QR de sucursales.</p>
-  <div id="tel-lista" style="margin-bottom:14px;"></div>
-  <div style="display:flex;gap:8px;">
-    <input type="tel" id="tel-nuevo" placeholder="Número de 10 dígitos" maxlength="10" inputmode="numeric"
-      style="flex:1;padding:10px 14px;border:1.5px solid var(--grey-lt);border-radius:10px;font-size:14px;font-family:monospace;outline:none;">
-    <button onclick="telefonoAgregar()" style="background:var(--blue);color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">+ Agregar</button>
-  </div>
-</div>
-<div id="tel-admin-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.4);z-index:9998;" onclick="document.getElementById('tel-admin-panel').style.display='none';document.getElementById('tel-admin-overlay').style.display='none';"></div>
-
-<div id="espejo-view" style="display:none;padding:24px;">
-  <div style="max-width:900px;margin:0 auto;">
-    <div id="espejo-contenido">
-      <div style="text-align:center;padding:60px;color:var(--grey-txt);">Cargando estado del usuario...</div>
-    </div>
-  </div>
-</div>
-
-<!-- MOD7: HISTORIAL SDP -->
-<div class="module" id="mod7">
-<div class="wrap">
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
-      <div>
-        <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:4px;">Historial de Solicitudes de Pedido</h2>
-        <p style="font-size:13px;color:var(--grey-txt);">Registro de todas las SDP generadas. PDF disponible desde Drive.</p>
-      </div>
-      <button onclick="histSdpCargar()" style="background:var(--blue);color:#fff;padding:9px 18px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">&#8635; Actualizar</button>
-    </div>
-    <!-- Filtros -->
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:12px;margin-bottom:20px;align-items:end;">
-      <div class="field"><label>Sucursal</label>
-        <div class="sel-wrap"><select id="hsdp-suc">
-          <option value="">Todas</option>
-          <option value="ÁVILA CAMACHO">Ávila Camacho</option>
-          <option value="PASEO JARDINES">Paseo Jardines</option>
-          <option value="POSTRERÍA">Postrería</option>
-        </select></div>
-      </div>
-      <div class="field"><label>Desde</label><input type="date" id="hsdp-desde"></div>
-      <div class="field"><label>Hasta</label><input type="date" id="hsdp-hasta"></div>
-      <div class="field"><label>Estado</label>
-        <div class="sel-wrap"><select id="hsdp-estado">
-          <option value="">Todos</option>
-          <option value="PENDIENTE">Pendiente</option>
-          <option value="EVALUADA">Evaluada</option>
-          <option value="VENCIDA">Vencida</option>
-          <option value="CANCELADA">Cancelada</option>
-        </select></div>
-      </div>
-      <button onclick="histSdpCargar()" style="background:var(--blue);color:#fff;padding:9px 18px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">Buscar</button>
-    </div>
-    <div id="hsdp-lista"></div>
-  </div>
-</div>
-</div>
 </div><!-- end app-root -->
 <div id="inv-autosave-ind" style="position:fixed;bottom:20px;right:20px;background:rgba(46,158,107,.95);color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;z-index:99999;opacity:0;transition:opacity .6s;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.2);"></div>
 </body>

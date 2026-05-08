@@ -2303,6 +2303,16 @@ function evRenderProds(){
 }
 
 function evToggleChk(chk){evToggle(chk.dataset.code, chk.checked);}
+function evSetQty(inp){
+  var code=inp.dataset.code;
+  var val=parseFloat(inp.value)||0;
+  if(!evRecibidos[code]) return;
+  evRecibidos[code].qty=val;
+  evRecibidos[code].rec=val>0;
+  var row=inp.closest('tr')||inp.parentElement;
+  if(row){var chk=row.querySelector('input[type="checkbox"]');if(chk)chk.checked=val>0;}
+  evRenderResumen();
+}
 function evToggle(code,rec){if(evRecibidos[code])evRecibidos[code].rec=rec;evRenderProds();evUpdateTotal();}
 function evSelAll(v){Object.keys(evRecibidos).forEach(function(c){evRecibidos[c].rec=v;});evRenderProds();evUpdateTotal();}
 function evUpdateTotal(){var t=0;Object.values(evRecibidos).forEach(function(i){if(i.rec)t+=i.precio*i.qty;});document.getElementById('ev-tot-real').textContent='$'+t.toFixed(2);}

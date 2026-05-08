@@ -285,7 +285,7 @@ textarea{resize:vertical;min-height:72px;line-height:1.6;}
     <div class="ntab" id="ntab3" onclick="showMod(3)">&#128203; Evaluacion de Entrega</div>
     <div class="ntab" id="ntab5" onclick="showMod(5)" style="display:none;">&#128179; Compras Conciliadas</div>
     <button id="btn-transferencias" onclick="abrirTransferencias()" style="display:block;background:#E8F7F1;color:#2E9E6B;border:1px solid rgba(46,158,107,.3);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;margin:auto 0 auto 8px;">🔄 Transferencias</button>
-    <button id="btn-tel-admin" onclick="document.getElementById('tel-admin-panel').style.display='block';document.getElementById('tel-admin-overlay').style.display='block';telefonosCargar();" style="display:none;background:var(--blue-lt);color:var(--blue);border:1px solid rgba(60,142,200,.3);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;margin:auto 8px auto 4px;">📱 Teléfonos</button>
+
   </div>
 </div>
 
@@ -2512,8 +2512,7 @@ function aplicarRol(){
   if(btnLimpiar) btnLimpiar.style.display = rol === 'admin' ? 'inline-block' : 'none';
   // Show/hide tabs based on role
   // Show admin buttons
-  var btnTelRol = document.getElementById('btn-tel-admin');
-  if(btnTelRol) btnTelRol.style.display = rol === 'admin' ? 'block' : 'none';
+
   var btnTrans = document.getElementById('btn-transferencias');
   if(btnTrans) btnTrans.style.display = 'block'; // visible for all roles
   // Admin tiene acceso universal a todas las pestanas presentes y futuras
@@ -3337,49 +3336,8 @@ function eliminarLineaSDP(folio, sucursal, btn){
 }
 
 // ══ GESTIÓN DE TELÉFONOS CEDIS (solo Admin) ══
-function telefonosCargar(){
-  var wrap = document.getElementById('tel-lista');
-  if(!wrap) return;
-  wrap.innerHTML = '<div style="color:var(--grey-txt);font-size:13px;">Cargando...</div>';
-  fetch(SCRIPT_URL + '?tipo=listar_telefonos')
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      var h = '';
-      if(!data||!data.length){ h = '<p style="color:var(--grey-txt);font-size:13px;">Sin teléfonos registrados.</p>'; }
-      else {
-        data.forEach(function(tel){
-          h += '<div style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--grey-lt);border-radius:10px;padding:10px 14px;margin-bottom:8px;">' +
-            '<span style="font-family:monospace;font-size:15px;font-weight:600;color:var(--dark);">📱 ' + tel + '</span>' +
-            '<button onclick="telefonoEliminar(\'' + tel + '\')" style="background:#FDECEA;color:#D4504A;border:1px solid #D4504A;padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600;">Eliminar</button>' +
-            '</div>';
-        });
-      }
-      wrap.innerHTML = h;
-    }).catch(function(){ wrap.innerHTML = '<p style="color:#D4504A;font-size:13px;">Error al cargar.</p>'; });
-}
 
-function telefonoAgregar(){
-  var inp = document.getElementById('tel-nuevo');
-  var tel = (inp.value||'').replace(/\D/g,'');
-  if(tel.length < 10){ alert('Ingresa 10 dígitos.'); return; }
-  fetch(SCRIPT_URL + '?tipo=agregar_telefono&telefono=' + encodeURIComponent(tel))
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      if(d.result==='ok'){ inp.value=''; telefonosCargar(); }
-      else alert('Error: ' + (d.msg||''));
-    }).catch(function(){ alert('Error de conexión.'); });
-}
 
-function telefonoEliminar(tel){
-  if(!confirm('¿Eliminar el teléfono ' + tel + '?')) return;
-  fetch(SCRIPT_URL + '?tipo=eliminar_telefono&telefono=' + encodeURIComponent(tel))
-    .then(function(r){ return r.json(); })
-    .then(function(){ telefonosCargar(); })
-    .catch(function(){ alert('Error de conexión.'); });
-}
-
-// ══ TRANSFERENCIAS INTERNAS ══
-var transPedido = {}; // code -> {qty, nombre, precio, pres}
 
 function abrirTransferencias(){
   // Pre-select emisora based on logged-in user's sucursal

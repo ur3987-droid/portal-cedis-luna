@@ -1726,7 +1726,13 @@ function invUpdateTotals(){
   var totalCosto = 0;
   var totalLineas = 0;
   var bycat = {};
-  CATALOGO.forEach(function(p){
+  var suc = document.getElementById('inv-suc') ? document.getElementById('inv-suc').value : '';
+  var cat = (CATALOGO && CATALOGO.length > 0) ? CATALOGO : (typeof CATALOGO_LOCAL !== 'undefined' ? CATALOGO_LOCAL : []);
+  var catFiltrado = cat.filter(function(p){
+    if(suc === 'Postreria' || suc === 'Postrería') return p.cat === 'POSTRERIA INSUMOS';
+    return p.cat !== 'POSTRERIA INSUMOS';
+  });
+  catFiltrado.forEach(function(p){
     var catId = p.cat.replace(/[^a-zA-Z0-9]/g,'_');
     if(!bycat[catId]) bycat[catId] = 0;
     var val = parseFloat(invConteo[p.code]) || 0;

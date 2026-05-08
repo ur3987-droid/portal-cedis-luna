@@ -1567,10 +1567,11 @@ function showMod(n) {
   window.scrollTo({top:0,behavior:'smooth'});
   if(n===4) histCargar();
   if(n===5) conciliacionCargar();
+  var modNames = {1:'Solicitud de Pedido',2:'Inventario',3:'Evaluación de Entrega',4:'Historial Inventarios',5:'Compras Conciliadas',7:'Historial SDP'};
+  espejoPublicar(modNames[n]||'', 'Módulo abierto', {});
   if(n===7) histSdpCargar();
   // Show phone admin button only for admin
-  var btnTel = document.getElementById('btn-tel-admin');
-  if(btnTel && sesionActual) btnTel.style.display = sesionActual.rol==='admin' ? 'block' : 'none';
+
   var btnTr = document.getElementById('btn-transferencias');
   if(btnTr) btnTr.style.display = 'block';
 }
@@ -1722,7 +1723,8 @@ function invRender(){
 
 
 function invUpdateTotals(){
-  var total = 0;
+  var totalCosto = 0;
+  var totalLineas = 0;
   var bycat = {};
   CATALOGO.forEach(function(p){
     var catId = p.cat.replace(/[^a-zA-Z0-9]/g,'_');
@@ -1730,14 +1732,26 @@ function invUpdateTotals(){
     var val = parseFloat(invConteo[p.code]) || 0;
     var subtotal = val * (p.precio || 0);
     bycat[catId] += subtotal;
-    total += subtotal;
+    totalCosto += subtotal;
+    if(val > 0) totalLineas++;
   });
   Object.keys(bycat).forEach(function(catId){
     var el = document.getElementById('subtotal-' + catId);
     if(el) el.textContent = fmtMoney(bycat[catId]);
   });
   var tel = document.getElementById('inv-total-general');
-  if(tel) tel.textContent = fmtMoney(total);
+  if(tel) tel.textContent = fmtMoney(totalCosto);
+  var tic = document.getElementById('inv-items-count');
+  if(tic) tic.textContent = totalLineas + ' ítem' + (totalLineas !== 1 ? 's' : '');
+  // Publish mirror state
+  if(!sesionEspejo && sesionActual){
+    var sucInv = document.getElementById('inv-suc') ? document.getElementById('inv-suc').value : '';
+    var prodsInv = Object.keys(invConteo).filter(function(k){ return parseFloat(invConteo[k])>0; }).slice(0,50).map(function(k){
+      var p = CATALOGO.find(function(x){ return x.code===k; });
+      return {code:k, name:p?p.name:k, qty:invConteo[k]};
+    });
+    espejoPublicar('Inventario','Conteo en progreso — '+totalLineas+' ítems',{sucursal:sucInv,productos:prodsInv});
+  }
 }
 
 
@@ -2500,9 +2514,23 @@ function loginSubmit(){
     return;
   }
   sesionActual = {email:email, rol:user.rol, sucursal:user.sucursal, nombre:user.nombre};
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('app-root').style.display = 'block';
-  aplicarRol();
+  // Verificar si hay sesión activa de otro dispositivo
+  sesionVerificar(email,
+    function() {
+      // Modo espejo — otro dispositivo ya tiene sesión activa
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app-root').style.display = 'block';
+      aplicarRol();
+      espejoIniciar();
+    },
+    function() {
+      // Modo normal — registrar sesión y entrar
+      sesionIniciar(email);
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app-root').style.display = 'block';
+      aplicarRol();
+    }
+  );
 }
 function aplicarRol(){
 
@@ -3156,7 +3184,7 @@ function conciliacionCancelarConfirmar(){
   if(h2) h2.value = hoyStr;
 })();
 
-var sesionEspejo = false;
+
 
 
 
@@ -3482,6 +3510,138 @@ function transEnviar(){
     document.getElementById('trans-ok').style.display='block';
   });
 }
+
+// ══════════════════════════════════════════════════════════
+// SESIÓN ACTIVA + ESPEJO EN TIEMPO REAL
+// ══════════════════════════════════════════════════════════
+var sesionEspejo   = false;
+var espejoInterval = null;
+var pingInterval   = null;
+
+// Genera tabId único por pestaña (persiste en sessionStorage)
+function getTabId() {
+  var id = sessionStorage.getItem('lmc_tab');
+  if (!id) { id = 'tab_' + Date.now() + '_' + Math.random().toString(36).slice(2,6); sessionStorage.setItem('lmc_tab', id); }
+  return id;
+}
+
+// Dispositivo 1: registra sesión y mantiene heartbeat
+function sesionIniciar(email) {
+  var tabId = getTabId();
+  function ping() {
+    fetch(SCRIPT_URL + '?tipo=sesion_ping&email=' + encodeURIComponent(email) + '&tabId=' + encodeURIComponent(tabId))
+      .catch(function(){});
+  }
+  ping(); // ping inmediato
+  pingInterval = setInterval(ping, 45000); // cada 45 segundos
+  window.addEventListener('beforeunload', function() {
+    fetch(SCRIPT_URL + '?tipo=sesion_cerrar&email=' + encodeURIComponent(email)).catch(function(){});
+  });
+}
+
+// Verificar si hay otra sesión activa antes de entrar
+function sesionVerificar(email, onEspejo, onNormal) {
+  var tabId = getTabId();
+  fetch(SCRIPT_URL + '?tipo=sesion_check&email=' + encodeURIComponent(email) + '&tabId=' + encodeURIComponent(tabId))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d && d.activa) {
+        onEspejo(); // hay sesión de otro tab → modo espejo
+      } else {
+        onNormal(); // no hay sesión → modo normal, registrar
+      }
+    })
+    .catch(function() { onNormal(); }); // si falla, entrar normal
+}
+
+// Publicar estado actual al espejo (lo llaman las funciones del portal)
+function espejoPublicar(modulo, paso, datos) {
+  if (sesionEspejo || !sesionActual) return;
+  var body = new URLSearchParams();
+  body.append('tipo',   'espejo_pub');
+  body.append('email',  sesionActual.email);
+  body.append('modulo', modulo);
+  body.append('paso',   paso);
+  body.append('datos',  JSON.stringify(datos || {}));
+  fetch(SCRIPT_URL, { method:'POST', body: body }).catch(function(){});
+}
+
+// ── Modo espejo: polling y render ──
+function espejoIniciar() {
+  sesionEspejo = true;
+  // Banner fijo
+  var banner = document.createElement('div');
+  banner.id = 'espejo-banner';
+  banner.innerHTML = '<span style="font-size:14px;">👁 Modo solo lectura — Sesión espejo activa</span>' +
+    '<span id="espejo-ts" style="font-size:11px;opacity:.7;margin-left:12px;"></span>';
+  banner.style.cssText = 'position:fixed;top:0;left:0;width:100%;background:#1D4F73;color:#fff;padding:10px 20px;z-index:99999;display:flex;align-items:center;justify-content:space-between;font-family:DM Sans,sans-serif;font-weight:600;';
+  document.body.prepend(banner);
+  document.getElementById('app-root').style.marginTop = '44px';
+  // Bloquear interacción
+  document.addEventListener('click',   function(e){ if(e.target.closest('button,input,select,textarea,a')) { e.preventDefault(); e.stopPropagation(); } }, true);
+  document.addEventListener('keydown', function(e){ e.preventDefault(); }, true);
+  // Ocultar todas las pestañas y mostrar vista espejo
+  document.querySelectorAll('.ntab').forEach(function(t){ t.style.display='none'; });
+  document.querySelectorAll('.module').forEach(function(m){ m.classList.remove('active'); });
+  var ev = document.getElementById('espejo-contenido');
+  if (ev) ev.parentElement.style.display = 'block';
+  // Polling cada 5 segundos
+  espejoPolling();
+  espejoInterval = setInterval(espejoPolling, 5000);
+}
+
+function espejoPolling() {
+  if (!sesionActual) return;
+  fetch(SCRIPT_URL + '?tipo=espejo_get&email=' + encodeURIComponent(sesionActual.email))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var ts = document.getElementById('espejo-ts');
+      if (ts) ts.textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      espejoRender(d);
+    }).catch(function(){});
+}
+
+function espejoRender(d) {
+  var wrap = document.getElementById('espejo-contenido');
+  if (!wrap) return;
+  if (!d || !d.modulo) {
+    wrap.innerHTML =
+      '<div style="text-align:center;padding:60px 20px;">' +
+      '<div style="font-size:48px;margin-bottom:16px;">👁</div>' +
+      '<div style="font-size:17px;font-weight:600;color:var(--dark);margin-bottom:8px;">Esperando actividad...</div>' +
+      '<div style="font-size:13px;color:var(--grey-txt);">En cuanto el usuario inicie una tarea aparecerá aquí en tiempo real.</div>' +
+      '<div style="font-size:12px;color:var(--blue);margin-top:10px;">Actualizando cada 5 segundos</div>' +
+      '</div>';
+    return;
+  }
+  var datos = {};
+  try { datos = JSON.parse(d.datos || '{}'); } catch(e){}
+  var h = '<div style="background:var(--blue-lt);border-radius:12px;padding:16px;margin-bottom:14px;">' +
+    '<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--grey-txt);margin-bottom:4px;">Módulo activo</div>' +
+    '<div style="font-size:20px;font-weight:700;color:var(--blue-dk);">' + d.modulo + '</div>' +
+    '<div style="font-size:13px;color:var(--grey-txt);margin-top:2px;">' + (d.paso||'') + '</div>' +
+    '</div>';
+  if (datos.sucursal) {
+    h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">';
+    h += '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:8px;padding:8px 14px;font-size:13px;"><span style="color:var(--grey-txt);">Sucursal: </span><strong>' + datos.sucursal + '</strong></div>';
+    if (datos.folio) h += '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:8px;padding:8px 14px;font-size:13px;font-family:monospace;font-weight:700;color:var(--blue);">' + datos.folio + '</div>';
+    h += '</div>';
+  }
+  if (datos.productos && datos.productos.length) {
+    h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    h += '<tr style="background:var(--blue-dkr);"><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:left;">Código</th><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:left;">Producto</th><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:right;">Cantidad</th></tr>';
+    datos.productos.forEach(function(p, i) {
+      var qty = parseFloat(p.qty) || 0;
+      var col = qty > 0 ? '#2E9E6B' : '#D4504A';
+      h += '<tr style="background:' + (i%2===0?'#fff':'#f5f8fc') + '">' +
+        '<td style="padding:6px 10px;font-family:monospace;color:var(--blue);">' + (p.code||'') + '</td>' +
+        '<td style="padding:6px 10px;">' + (p.name||'') + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-weight:700;color:' + col + ';">' + (qty>0?qty:'—') + '</td></tr>';
+    });
+    h += '</table></div>';
+  }
+  wrap.innerHTML = h;
+}
 </script>
 
 <!-- MOD4: HISTORIAL INVENTARIOS -->
@@ -3603,6 +3763,15 @@ function transEnviar(){
     </div>
   </div>
 </div>
+</div>
+
+<!-- ESPEJO: Vista solo lectura -->
+<div id="espejo-vista" style="display:none;padding:24px;">
+  <div style="max-width:900px;margin:0 auto;">
+    <div id="espejo-contenido">
+      <div style="text-align:center;padding:60px;color:var(--grey-txt);">Cargando...</div>
+    </div>
+  </div>
 </div>
 </div><!-- end app-root -->
 <!-- MODAL: TRANSFERENCIAS INTERNAS -->

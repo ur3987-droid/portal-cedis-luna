@@ -3259,13 +3259,30 @@ function histSdpCargar(){
     .then(function(r){ return r.json(); })
     .then(function(data){
       if(!data || !data.length){
-        lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--grey-txt);">No hay registros para los filtros seleccionados.</div>';
+        // If no results with date filter, try without dates
+        if(desde || hasta){
+          var urlSinFecha = SCRIPT_URL + '?tipo=historial_sdp';
+          if(suc) urlSinFecha += '&sucursal=' + encodeURIComponent(suc);
+          if(estado) urlSinFecha += '&estadoFiltro=' + encodeURIComponent(estado);
+          fetch(urlSinFecha)
+            .then(function(r2){ return r2.json(); })
+            .then(function(data2){
+              if(!data2 || !data2.length){
+                lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--grey-txt);">No hay registros disponibles.</div>';
+              } else {
+                histSdpRender(data2);
+              }
+            });
+        } else {
+          lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--grey-txt);">No hay registros disponibles.</div>';
+        }
         return;
       }
       histSdpRender(data);
     })
-    .catch(function(){
-      lista.innerHTML = '<div style="text-align:center;padding:20px;color:#D4504A;">Error al cargar historial SDP.</div>';
+    .catch(function(err){
+      console.log('histSdpCargar error:', err);
+      lista.innerHTML = '<div style="text-align:center;padding:20px;color:#D4504A;">Error al cargar. Verifica la conexión.</div>';
     });
 }
 

@@ -1560,27 +1560,28 @@ function resetPortal(){
 
 
 // ══ MODULE NAVIGATION ══
-function showMod(n) {
-  for (var i=1;i<=7;i++) {
-    var m=document.getElementById('mod'+i), t=document.getElementById('ntab'+i);
-    if(m) m.classList.remove('active');
-    if(t) t.classList.remove('active');
-  }
-  var modEl  = document.getElementById('mod'+n);
-  var ntabEl = document.getElementById('ntab'+n);
-  if(modEl)  modEl.classList.add('active');
-  if(ntabEl) ntabEl.classList.add('active');
-  window.scrollTo({top:0,behavior:'smooth'});
-  if(n===4) histCargar();
-  if(n===5) conciliacionCargar();
-  var modNames = {1:'Solicitud de Pedido',2:'Inventario',3:'Evaluación de Entrega',4:'Historial Inventarios',5:'Compras Conciliadas',7:'Historial SDP'};
-  espejoPublicar(modNames[n]||'', 'Módulo abierto', {});
-  if(n===7) histSdpCargar();
-  // Show phone admin button only for admin
-
-  var btnTr = document.getElementById('btn-transferencias');
-  if(btnTr) btnTr.style.display = 'block';
+function showMod(n){
+  try {
+    for(var i=1;i<=9;i++){
+      var m=document.getElementById('mod'+i);
+      var t=document.getElementById('ntab'+i);
+      if(m) m.classList.remove('active');
+      if(t) t.classList.remove('active');
+    }
+    var modEl=document.getElementById('mod'+n);
+    var tabEl=document.getElementById('ntab'+n);
+    if(modEl) modEl.classList.add('active');
+    if(tabEl) tabEl.classList.add('active');
+    window.scrollTo({top:0,behavior:'smooth'});
+    if(n===4) histCargar();
+    if(n===5) conciliacionCargar();
+    if(n===7) histSdpCargar();
+    espejoPublicar('Módulo '+n,'abierto',{});
+    var btnTr=document.getElementById('btn-transferencias');
+    if(btnTr) btnTr.style.display='block';
+  } catch(ex){ console.error('showMod error:',ex); }
 }
+
 
 // ══ IFRAME POST helper ══
 function iframePost(url, data, cb) {

@@ -3084,9 +3084,11 @@ function conciliacionCargar(){
   if(desde) url += '&desde=' + encodeURIComponent(desde);
   if(hasta) url += '&hasta=' + encodeURIComponent(hasta);
 
+  console.log('histSdpCargar URL:', url);
   fetch(url)
     .then(function(r){ return r.json(); })
     .then(function(data){
+      console.log('histSdpCargar respuesta:', data ? data.length : 'null', 'registros');
       if(!data || !data.length){ tablaEl.innerHTML = '<div style="text-align:center;padding:30px;color:var(--grey-txt);">No hay registros para el periodo seleccionado.</div>'; return; }
       // Filter by estado
       var rows = estadoF ? data.filter(function(r){ return r.estado === estadoF; }) : data;
@@ -3258,9 +3260,11 @@ function histSdpCargar(){
   if(hasta) url += '&hasta=' + encodeURIComponent(hasta);
   if(estado) url += '&estadoFiltro=' + encodeURIComponent(estado);
 
+  console.log('histSdpCargar URL:', url);
   fetch(url)
     .then(function(r){ return r.json(); })
     .then(function(data){
+      console.log('histSdpCargar respuesta:', data ? data.length : 'null', 'registros');
       if(!data || !data.length){
         // If no results with date filter, try without dates
         if(desde || hasta){
@@ -3290,6 +3294,7 @@ function histSdpCargar(){
 }
 
 function histSdpRender(rows){
+  console.log('histSdpRender llamado con', rows.length, 'filas');
   var lista = document.getElementById('hsdp-lista');
   var esAdmin = sesionActual && (sesionActual.rol === 'admin');
   var esCedis = sesionActual && sesionActual.rol === 'cedis';

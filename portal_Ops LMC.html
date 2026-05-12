@@ -3241,59 +3241,46 @@ function cargarCatalogoDinamico(cb) {
 function histSdpCargar(){
   var lista = document.getElementById('hsdp-lista');
   if(!lista) return;
-  lista.innerHTML = '<div style="text-align:center;padding:30px;color:var(--grey-txt);">Cargando...</div>';
-
-  var suc   = document.getElementById('hsdp-suc') ? document.getElementById('hsdp-suc').value : '';
-  var desde = document.getElementById('hsdp-desde') ? document.getElementById('hsdp-desde').value : '';
-  var hasta = document.getElementById('hsdp-hasta') ? document.getElementById('hsdp-hasta').value : '';
-  var estado = document.getElementById('hsdp-estado') ? document.getElementById('hsdp-estado').value : '';
-
-  // Sucursal role: force their own sucursal
-  if(sesionActual && sesionActual.rol === 'sucursal'){
-    var tabNorm = {'Ávila Camacho':'ÁVILA CAMACHO','Avila Camacho':'ÁVILA CAMACHO','Paseo Jardines':'PASEO JARDINES','Postrería':'POSTRERÍA','Postreria':'POSTRERÍA'};
-    suc = tabNorm[sesionActual.sucursal] || sesionActual.sucursal.toUpperCase();
-    var sucSel = document.getElementById('hsdp-suc');
-    if(sucSel){ sucSel.value = suc; sucSel.disabled = true; }
-  }
+  lista.innerHTML = '<div style="text-align:center;padding:30px;color:var(--grey-txt);">Cargando historial...</div>';
 
   var url = SCRIPT_URL + '?tipo=historial_sdp';
-  if(suc)   url += '&sucursal=' + encodeURIComponent(suc);
-  if(desde) url += '&desde=' + encodeURIComponent(desde);
-  if(hasta) url += '&hasta=' + encodeURIComponent(hasta);
-  if(estado) url += '&estadoFiltro=' + encodeURIComponent(estado);
 
-  console.log('histSdpCargar URL:', url);
+  // Sucursal filter by role
+  if(sesionActual && sesionActual.rol === 'sucursal'){
+    var tabNorm = {'Ávila Camacho':'ÁVILA CAMACHO','Avila Camacho':'ÁVILA CAMACHO','Paseo Jardines':'PASEO JARDINES','Postrería':'POSTRERÍA','Postreria':'POSTRERÍA'};
+    var sucTab = tabNorm[sesionActual.sucursal] || sesionActual.sucursal.toUpperCase();
+    url += '&sucursal=' + encodeURIComponent(sucTab);
+  } else {
+    var sucEl = document.getElementById('hsdp-suc');
+    if(sucEl && sucEl.value) url += '&sucursal=' + encodeURIComponent(sucEl.value);
+  }
+
+  // Date filters (optional)
+  var desdeEl = document.getElementById('hsdp-desde');
+  var hastaEl = document.getElementById('hsdp-hasta');
+  var estadoEl = document.getElementById('hsdp-estado');
+  if(desdeEl && desdeEl.value) url += '&desde=' + encodeURIComponent(desdeEl.value);
+  if(hastaEl && hastaEl.value) url += '&hasta=' + encodeURIComponent(hastaEl.value);
+  if(estadoEl && estadoEl.value) url += '&estadoFiltro=' + encodeURIComponent(estadoEl.value);
+
+  console.log('histSdpCargar:', url);
+
   fetch(url)
     .then(function(r){ return r.json(); })
     .then(function(data){
-      console.log('histSdpCargar respuesta:', data ? data.length : 'null', 'registros');
-      if(!data || !data.length){
-        // If no results with date filter, try without dates
-        if(desde || hasta){
-          var urlSinFecha = SCRIPT_URL + '?tipo=historial_sdp';
-          if(suc) urlSinFecha += '&sucursal=' + encodeURIComponent(suc);
-          if(estado) urlSinFecha += '&estadoFiltro=' + encodeURIComponent(estado);
-          fetch(urlSinFecha)
-            .then(function(r2){ return r2.json(); })
-            .then(function(data2){
-              if(!data2 || !data2.length){
-                lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--grey-txt);">No hay registros disponibles.</div>';
-              } else {
-                histSdpRender(data2);
-              }
-            });
-        } else {
-          lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--grey-txt);">No hay registros disponibles.</div>';
-        }
+      console.log('histSdpCargar data:', Array.isArray(data) ? data.length + ' registros' : data);
+      if(!Array.isArray(data) || !data.length){
+        lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--grey-txt);">No hay registros disponibles.</div>';
         return;
       }
       histSdpRender(data);
     })
     .catch(function(err){
       console.log('histSdpCargar error:', err);
-      lista.innerHTML = '<div style="text-align:center;padding:20px;color:#D4504A;">Error al cargar. Verifica la conexión.</div>';
+      lista.innerHTML = '<div style="text-align:center;padding:20px;color:#D4504A;">Error al cargar historial.</div>';
     });
 }
+
 
 function histSdpRender(rows){
   console.log('histSdpRender llamado con', rows.length, 'filas');

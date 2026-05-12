@@ -26,21 +26,19 @@
     .btn{width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;margin-bottom:8px;}
     .btn-entrada{background:linear-gradient(135deg,#2E9E6B,#27875c);color:#fff;}
     .btn-salida{background:linear-gradient(135deg,#E07B2A,#c4671f);color:#fff;}
-    .btn:disabled{opacity:.5;}
-    .status-box{border-radius:12px;padding:14px;text-align:center;margin-bottom:10px;}
-    .status-ok{background:rgba(46,158,107,.1);border:1.5px solid #2E9E6B;}
-    .status-done{background:rgba(29,79,115,.1);border:1.5px solid #1D4F73;}
+    .btn:active{transform:scale(.97);}
+    .status-ok{background:rgba(46,158,107,.1);border:1.5px solid #2E9E6B;border-radius:12px;padding:14px;text-align:center;margin-bottom:10px;}
+    .status-done{background:rgba(29,79,115,.1);border:1.5px solid #1D4F73;border-radius:12px;padding:14px;text-align:center;margin-bottom:10px;}
     .check-row{display:flex;gap:10px;margin-bottom:12px;}
     .check-col{flex:1;background:#F8FAFE;border-radius:8px;padding:10px;text-align:center;}
     .check-col-lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6B7E93;margin-bottom:4px;font-weight:700;}
     .check-col-val{font-size:15px;font-weight:700;font-family:monospace;color:#1D4F73;}
-    .loading{text-align:center;padding:40px 20px;color:#6B7E93;}
-    .spinner{width:36px;height:36px;border:3px solid #E0E8F0;border-top-color:#3C8EC8;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px;}
-    @keyframes spin{to{transform:rotate(360deg);}}
     .sdp-tab{display:flex;gap:8px;margin-bottom:14px;overflow-x:auto;padding-bottom:4px;}
     .sdp-tab-btn{flex-shrink:0;padding:8px 14px;border-radius:20px;border:1.5px solid #E0E8F0;background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:monospace;color:#6B7E93;}
     .sdp-tab-btn.active{background:#1D4F73;color:#fff;border-color:#1D4F73;}
     .sdp-tab-btn.done{border-color:#2E9E6B;color:#2E9E6B;}
+    .spinner{width:36px;height:36px;border:3px solid #E0E8F0;border-top-color:#3C8EC8;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px;}
+    @keyframes spin{to{transform:rotate(360deg);}}
     .footer{text-align:center;font-size:11px;color:#9BADBF;padding:16px;}
   </style>
 </head>
@@ -51,63 +49,82 @@
     <div class="header-suc">📍 Postrería</div>
   </div>
   <div class="container">
-    <div id="loading" class="card loading">
+    <div id="loading" class="card" style="text-align:center;padding:40px 20px;color:#6B7E93;">
       <div class="spinner"></div>
-      <div>Buscando pedidos pendientes...</div>
+      <div id="loading-msg">Buscando pedidos...</div>
     </div>
     <div id="content"></div>
   </div>
-  <div class="footer">Luna Media Café · Sistema CEDIS · Postrería</div>
-
+  <div class="footer">Luna Media Café · CEDIS · Postrería</div>
 <script>
-const SCRIPT_URL  = 'https://script.google.com/macros/s/AKfycbz5AsvN3MhtI5Ol0H35m2flhuZIKg50yvWSevTlQJMifnYk9Eo_kvWGgihhr-BDtKwYWQ/exec';
-const SUCURSAL    = 'Postrería';
-const STORAGE_KEY = 'lmc_checks_postreria';
-
-var pedidos = [];
+var SCRIPT_URL  = 'https://script.google.com/macros/s/AKfycbz5AsvN3MhtI5Ol0H35m2flhuZIKg50yvWSevTlQJMifnYk9Eo_kvWGgihhr-BDtKwYWQ/exec';
+var SUCURSAL    = 'Postrería';
+var STORAGE_KEY = 'lmc_checks_postreria';
+var pedidos     = [];
 var folioActivo = null;
 
-function getHoy(){ return new Date().toISOString().split('T')[0]; }
-function getHora(){ return new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}); }
-function getFechaHora(){ return new Date().toLocaleString('es-MX',{hour12:false}); }
-function fmtMoney(val){
-  var n=parseFloat(String(val).replace(/[$,]/g,''))||0;
-  return '$'+n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+function getHoy() { return new Date().toISOString().split('T')[0]; }
+function getHora() { return new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}); }
+function getFechaHora() { return new Date().toLocaleString('es-MX',{hour12:false}); }
+function fmtMoney(val) {
+  var n = parseFloat(String(val).replace(/[$,]/g,''))||0;
+  return '$'+n.toFixed(2).replace(/(\d)(?=(\d{3})+\.)/g,'$1,');
 }
-function getBadge(folio){
+function getBadge(folio) {
   if(!folio) return '';
-  if(folio.indexOf('-ASI')>=0) return '<span class="badge badge-asi">Asignación CEDIS</span>';
+  if(folio.indexOf('-ASI')>=0) return '<span class="badge badge-asi">Asign.CEDIS</span>';
   if(folio.indexOf('-EXT')>=0) return '<span class="badge badge-ext">Extraordinaria</span>';
   return '<span class="badge badge-ord">Ordinaria</span>';
 }
-function loadChecks(){
-  try{
+function loadChecks() {
+  try {
     var raw=localStorage.getItem(STORAGE_KEY);
     if(!raw) return {};
     var d=JSON.parse(raw);
-    if(d._fecha!==getHoy()){ localStorage.removeItem(STORAGE_KEY); return {}; }
+    if(d._fecha!==getHoy()){localStorage.removeItem(STORAGE_KEY);return {};}
     return d;
-  } catch(e){ return {}; }
+  } catch(e){return {};}
 }
-function saveCheck(folio,tipo,hora){
+function saveCheck(folio,tipo,hora) {
   var d=loadChecks();
   d._fecha=getHoy();
-  if(!d[folio]) d[folio]={};
+  if(!d[folio])d[folio]={};
   d[folio][tipo]=hora;
   localStorage.setItem(STORAGE_KEY,JSON.stringify(d));
 }
-function renderSinPedido(){
-  document.getElementById('content').innerHTML=
-    '<div class="card" style="text-align:center;padding:30px;">'+
-    '<div style="font-size:48px;margin-bottom:12px;">📭</div>'+
-    '<div style="font-size:17px;font-weight:700;margin-bottom:6px;">Sin pedidos pendientes</div>'+
-    '<div style="font-size:13px;color:#6B7E93;">No hay solicitudes activas para Postrería.</div>'+
-    '</div>'+
-    '<button class="btn" style="background:#E0E8F0;color:#6B7E93;" onclick="init()">🔄 Actualizar</button>';
+function showError(msg) {
+  document.getElementById('loading').style.display='none';
+  var el=document.getElementById('content');
+  el.innerHTML='<div class="card" style="text-align:center;padding:30px;">'+
+    '<div style="font-size:40px;margin-bottom:12px;">&#9888;&#65039;</div>'+
+    '<div style="font-size:15px;font-weight:700;">'+msg+'</div></div>'+
+    '<button class="btn" style="background:#E0E8F0;color:#6B7E93;" onclick="init()">&#128260; Reintentar</button>';
 }
-function renderAll(){
-  if(!pedidos.length){ renderSinPedido(); return; }
+function setFolioActivo(el) { folioActivo=el.getAttribute('data-folio'); renderAll(); }
+function irSiguiente(el) { folioActivo=el.getAttribute('data-folio'); renderAll(); }
+function registrarCheck(tipo) {
+  var hora=getHora();
+  var btns=document.querySelectorAll('.btn-entrada,.btn-salida');
+  btns.forEach(function(b){b.disabled=true;b.textContent='Registrando...';});
+  saveCheck(folioActivo,tipo,hora);
+  fetch(SCRIPT_URL+'?tipo=check_entrega&sucursal='+encodeURIComponent(SUCURSAL)+
+    '&check='+tipo+'&hora='+encodeURIComponent(hora)+
+    '&fechaHora='+encodeURIComponent(getFechaHora())+
+    '&folio='+encodeURIComponent(folioActivo||''))
+    .finally(function(){renderAll();});
+}
+function renderAll() {
+  document.getElementById('loading').style.display='none';
   var checks=loadChecks();
+  if(!pedidos.length){
+    document.getElementById('content').innerHTML=
+      '<div class="card" style="text-align:center;padding:30px;">'+
+      '<div style="font-size:48px;margin-bottom:12px;">&#128237;</div>'+
+      '<div style="font-size:17px;font-weight:700;margin-bottom:6px;">Sin pedidos pendientes</div>'+
+      '<div style="font-size:13px;color:#6B7E93;">No hay solicitudes activas para Postrería.</div></div>'+
+      '<button class="btn" style="background:#E0E8F0;color:#6B7E93;" onclick="init()">&#128260; Actualizar</button>';
+    return;
+  }
   var h='';
   if(pedidos.length>1){
     h+='<div class="sdp-tab">';
@@ -115,87 +132,92 @@ function renderAll(){
       var c=checks[p.folio]||{};
       var isDone=c.entrada&&c.salida;
       var isActive=folioActivo===p.folio;
-      h+='<button onclick="setFolioActivo(''+p.folio+'')" class="sdp-tab-btn'+(isActive?' active':(isDone?' done':''))+'">'+p.folio+'</button>';
+      h+='<button class="sdp-tab-btn'+(isActive?' active':(isDone?' done':''))+
+        '" data-folio="'+p.folio+'" onclick="setFolioActivo(this)">'+p.folio+'</button>';
     });
     h+='</div>';
   }
-  var p=pedidos.find(function(x){ return x.folio===folioActivo; })||pedidos[0];
+  var p=pedidos.find(function(x){return x.folio===folioActivo;})||pedidos[0];
   var c=checks[p.folio]||{};
   h+='<div class="card">'+
     '<div class="card-title">Pedido en entrega</div>'+
     '<div class="folio">'+p.folio+'</div>'+getBadge(p.folio)+
     '<div class="row"><span class="row-lbl">Sucursal</span><span class="row-val">Postrería</span></div>'+
     '<div class="row"><span class="row-lbl">Fecha SDP</span><span class="row-val">'+p.fecha+'</span></div>'+
-    '<div class="row"><span class="row-lbl">Entrega requerida</span><span class="row-val">'+p.fechaEntrega+'</span></div>'+
+    '<div class="row"><span class="row-lbl">Entrega</span><span class="row-val">'+p.fechaEntrega+'</span></div>'+
     '<div class="row"><span class="row-lbl">Productos</span><span class="row-val">'+p.numProductos+'</span></div>'+
-    '<div class="row"><span class="row-lbl">Total estimado</span><span class="row-val" style="font-weight:700;color:#1D4F73;">'+fmtMoney(p.totalEstimado)+'</span></div>'+
-    '</div>'+
-    '<div class="card">'+
-    '<div class="card-title">Registro de horarios</div>'+
-    '<div class="check-row">'+
-    '<div class="check-col"><div class="check-col-lbl">🟢 Llegada</div>'+(c.entrada?'<div class="check-col-val">'+c.entrada+'</div>':'<div style="color:#C5D3E0;">—</div>')+'</div>'+
-    '<div class="check-col"><div class="check-col-lbl">🔴 Salida</div>'+(c.salida?'<div class="check-col-val">'+c.salida+'</div>':'<div style="color:#C5D3E0;">—</div>')+'</div>'+
+    '<div class="row"><span class="row-lbl">Total</span><span class="row-val" style="font-weight:700;color:#1D4F73;">'+fmtMoney(p.totalEstimado)+'</span></div>'+
     '</div>';
+  h+='<div class="card">'+
+    '<div class="card-title">Horarios</div>'+
+    '<div class="check-row">'+
+    '<div class="check-col"><div class="check-col-lbl">Llegada</div>'+
+    (c.entrada?'<div class="check-col-val">'+c.entrada+'</div>':'<div style="color:#C5D3E0;">&#8212;</div>')+
+    '</div>'+
+    '<div class="check-col"><div class="check-col-lbl">Salida</div>'+
+    (c.salida?'<div class="check-col-val">'+c.salida+'</div>':'<div style="color:#C5D3E0;">&#8212;</div>')+
+    '</div></div>';
   if(!c.entrada){
-    h+='<button class="btn btn-entrada" onclick="registrarCheck('entrada')">✅ Registrar Llegada</button>';
-  } else if(!c.salida){
-    h+='<div class="status-box status-ok">'+
-      '<div style="font-size:28px;margin-bottom:6px;">🟢</div>'+
+    h+='<button class="btn btn-entrada" onclick="registrarCheck(&quot;entrada&quot;)">&#9989; Registrar Llegada</button>';
+  }else if(!c.salida){
+    h+='<div class="status-ok">'+
+      '<div style="font-size:28px;margin-bottom:6px;">&#128994;</div>'+
       '<div style="font-size:15px;font-weight:700;color:#2E9E6B;">Llegada: '+c.entrada+'</div>'+
-      '<div style="font-size:12px;color:#6B7E93;margin-top:4px;">Escanea al terminar la entrega</div>'+
-      '</div>'+
-      '<button class="btn btn-salida" onclick="registrarCheck('salida')">🏁 Registrar Salida</button>';
-  } else {
-    h+='<div class="status-box status-done">'+
-      '<div style="font-size:28px;margin-bottom:6px;">✅</div>'+
+      '<div style="font-size:12px;color:#6B7E93;margin-top:4px;">Escanea al terminar</div></div>'+
+      '<button class="btn btn-salida" onclick="registrarCheck(&quot;salida&quot;)">&#127937; Registrar Salida</button>';
+  }else{
+    h+='<div class="status-done">'+
+      '<div style="font-size:28px;margin-bottom:6px;">&#9989;</div>'+
       '<div style="font-size:15px;font-weight:700;color:#1D4F73;">Entrega completada</div>'+
-      '<div style="font-size:13px;color:#6B7E93;margin-top:4px;">Llegada: <strong style="color:#2E9E6B;">'+c.entrada+'</strong> · Salida: <strong style="color:#E07B2A;">'+c.salida+'</strong></div>'+
-      '</div>';
-    var pendiente=pedidos.find(function(x){ var cx=checks[x.folio]||{}; return !cx.entrada; });
-    if(pendiente) h+='<button class="btn" style="background:#E0E8F0;color:#1D4F73;font-weight:700;" onclick="setFolioActivo(''+pendiente.folio+'')">Siguiente: '+pendiente.folio+' →</button>';
+      '<div style="font-size:13px;color:#6B7E93;margin-top:4px;">'+
+      'Llegada: <strong style="color:#2E9E6B;">'+c.entrada+'</strong> &nbsp;&middot;&nbsp; '+
+      'Salida: <strong style="color:#E07B2A;">'+c.salida+'</strong></div></div>';
+    var sig=pedidos.find(function(x){var cx=checks[x.folio]||{};return !cx.entrada;});
+    if(sig){
+      h+='<button class="btn" style="background:#E0E8F0;color:#1D4F73;font-weight:700;" '+
+        'data-folio="'+sig.folio+'" onclick="irSiguiente(this)">Siguiente: '+sig.folio+' &rarr;</button>';
+    }
   }
   h+='</div>';
   document.getElementById('content').innerHTML=h;
 }
-function setFolioActivo(folio){ folioActivo=folio; renderAll(); }
-function registrarCheck(tipo){
-  var hora=getHora();
-  var btn=document.querySelector('.btn-entrada,.btn-salida');
-  if(btn){ btn.disabled=true; btn.textContent='⏳ Registrando...'; }
-  saveCheck(folioActivo,tipo,hora);
-  fetch(SCRIPT_URL+'?tipo=check_entrega&sucursal='+encodeURIComponent(SUCURSAL)+
-    '&check='+tipo+'&hora='+encodeURIComponent(hora)+
-    '&fechaHora='+encodeURIComponent(getFechaHora())+
-    '&folio='+encodeURIComponent(folioActivo||''))
-    .finally(function(){ renderAll(); });
-}
-function init(){
+function init() {
   document.getElementById('loading').style.display='block';
+  document.getElementById('loading-msg').textContent='Buscando pedidos...';
   document.getElementById('content').innerHTML='';
+  var done=false, seg=1;
+  var timer=setTimeout(function(){
+    if(!done){done=true;showError('Sin respuesta. Verifica internet.');}
+  },20000);
+  var cnt=setInterval(function(){
+    if(done){clearInterval(cnt);return;}
+    document.getElementById('loading-msg').textContent='Buscando pedidos... ('+seg+'s)';
+    seg++;
+  },1000);
   fetch(SCRIPT_URL+'?tipo=pedidos_pendientes&sucursal='+encodeURIComponent(SUCURSAL))
-    .then(function(r){ return r.json(); })
+    .then(function(r){return r.json();})
     .then(function(data){
-      document.getElementById('loading').style.display='none';
-      pedidos=data||[];
+      if(done)return;
+      done=true;clearTimeout(timer);clearInterval(cnt);
+      pedidos=Array.isArray(data)?data:[];
       if(pedidos.length){
-        var checks=loadChecks();
-        var primero=pedidos.find(function(p){ var c=checks[p.folio]||{}; return !c.entrada; })||pedidos[0];
-        folioActivo=primero.folio;
+        var chks=loadChecks();
+        var first=pedidos.find(function(p){var c=chks[p.folio]||{};return !c.entrada;})||pedidos[0];
+        folioActivo=first.folio;
       }
       renderAll();
     })
     .catch(function(){
-      document.getElementById('loading').style.display='none';
-      document.getElementById('content').innerHTML=
-        '<div class="card" style="text-align:center;padding:30px;">'+
-        '<div style="font-size:40px;margin-bottom:12px;">⚠️</div>'+
-        '<div style="font-size:16px;font-weight:700;">Error de conexión</div>'+
-        '<div style="font-size:13px;color:#6B7E93;margin-top:6px;">Verifica tu internet e intenta de nuevo.</div>'+
-        '</div>'+
-        '<button class="btn" style="background:#E0E8F0;color:#6B7E93;" onclick="init()">🔄 Reintentar</button>';
+      if(done)return;
+      done=true;clearTimeout(timer);clearInterval(cnt);
+      showError('Error de conexion.');
     });
 }
-setInterval(function(){ init(); }, 30000);
+setInterval(function(){
+  var chks=loadChecks();
+  var inc=pedidos.some(function(p){var c=chks[p.folio]||{};return !c.salida;});
+  if(inc||!pedidos.length)init();
+},30000);
 init();
 </script>
 </body>

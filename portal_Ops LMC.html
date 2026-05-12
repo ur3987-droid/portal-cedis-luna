@@ -1566,8 +1566,10 @@ function showMod(n) {
     if(m) m.classList.remove('active');
     if(t) t.classList.remove('active');
   }
-  document.getElementById('mod'+n).classList.add('active');
-  document.getElementById('ntab'+n).classList.add('active');
+  var modEl  = document.getElementById('mod'+n);
+  var ntabEl = document.getElementById('ntab'+n);
+  if(modEl)  modEl.classList.add('active');
+  if(ntabEl) ntabEl.classList.add('active');
   window.scrollTo({top:0,behavior:'smooth'});
   if(n===4) histCargar();
   if(n===5) conciliacionCargar();

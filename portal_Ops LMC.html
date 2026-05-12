@@ -695,7 +695,11 @@ textarea{resize:vertical;min-height:72px;line-height:1.6;}
       <button onclick="evSelAll(true)" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);color:#fff;padding:3px 10px;border-radius:6px;font-size:11px;cursor:pointer;">Todo</button>
       <button onclick="evSelAll(false)" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);color:#fff;padding:3px 10px;border-radius:6px;font-size:11px;cursor:pointer;">Ninguno</button>
     </div></div>
-    <div id="ev-prods"></div></div>
+    <div id="ev-prods"></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;background:var(--blue-lt);border-radius:10px;padding:12px 16px;margin-top:12px;">
+    <span style="font-size:13px;font-weight:600;color:var(--dark);">Total real recibido</span>
+    <span id="ev-total-real-display" style="font-size:18px;font-weight:700;color:var(--blue-dk);">$0.00</span>
+  </div></div>
   <div style="display:flex;justify-content:space-between;margin-top:20px;">
     <button class="btn-secondary" onclick="evBack1()">&larr; Regresar</button>
     <button class="btn-primary" onclick="evNext2()">Continuar &rarr;</button>
@@ -2286,8 +2290,10 @@ function evRenderProds(){
   if(!evProductos.length){document.getElementById('ev-prods').innerHTML='<div style="padding:16px;text-align:center;color:var(--grey-txt);">Sin productos en este pedido.</div>';return;}
   var h='';
   evProductos.forEach(function(p){
-    var rec=evRecibidos[p.code]?evRecibidos[p.code].rec:true;
-    var sub=p.precio*p.qty;
+    var er=evRecibidos[p.code]||{rec:true,qty:p.qty};
+    var rec=er.rec;
+    var qtyRec=parseFloat(er.qty)||p.qty;
+    var sub=p.precio*qtyRec; // subtotal based on received qty
     h+='<div style="display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid var(--grey-lt);gap:12px;'+(rec?'':'opacity:.5;background:#FEF5F5;')+'">';
     h+='<input type="checkbox" '+(rec?'checked':'')+' data-code="'+p.code+'" onchange="evToggleChk(this)" style="width:18px;height:18px;accent-color:var(--blue);cursor:pointer;flex-shrink:0;">';
     // Quantity received input (allows fractions for Kg/weight products)
@@ -3193,11 +3199,8 @@ function conciliacionCancelarConfirmar(){
   var h = document.getElementById('conc-hasta');
   if(d) d.value = primeroDiaMes;
   if(h) h.value = hoyStr;
-  // Historial SDP
-  var d2 = document.getElementById('hsdp-desde');
-  var h2 = document.getElementById('hsdp-hasta');
-  if(d2) d2.value = primeroDiaMes;
-  if(h2) h2.value = hoyStr;
+  // Historial SDP — no default dates so ALL records load
+  // (user can filter by date manually)
 })();
 
 

@@ -3188,8 +3188,15 @@ function conciliacionCancelarConfirmar(){
     canceladoPor: sesionActual ? sesionActual.nombre : 'Admin',
     timestamp: new Date(Date.now()+3600000).toLocaleString('es-MX',{hour12:false})
   }, function(){
-    conciliacionCargar();
-    alert('SDP ' + concFolioActual + ' cancelada correctamente. Se han enviado notificaciones a todos los involucrados.');
+    // Reload whichever tab is active
+    var mod5 = document.getElementById('mod5');
+    var mod7 = document.getElementById('mod7');
+    if(mod7 && mod7.classList.contains('active')){
+      histSdpCargar();
+    } else {
+      conciliacionCargar();
+    }
+    alert('SDP ' + concFolioActual + ' cancelada. Notificaciones enviadas.');
   });
 }
 

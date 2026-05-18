@@ -2207,25 +2207,34 @@ function evSelectFolio(f){
 
   // Pre-fill hora entrada and salida from QR check data or current time
   var suc = document.getElementById('ev-suc') ? document.getElementById('ev-suc').value : '';
-  var sucKey = suc.toLowerCase()
-    .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
-    .replace(/ñ/g,'n').replace(/\s+/g,'_');
-  var checkKey = 'lmc_check_' + sucKey;
-  var horaIn = document.getElementById('ev-horaIn');
+  var horaIn  = document.getElementById('ev-horaIn');
   var horaOut = document.getElementById('ev-horaOut');
 
-  // Try QR check data first
+  // Map sucursal to check page localStorage key (must match check pages)
+  var sucCheckKey = {
+    'Ávila Camacho':  'lmc_checks_avila',
+    'Avila Camacho':  'lmc_checks_avila',
+    'Paseo Jardines': 'lmc_checks_paseo',
+    'Postrería':      'lmc_checks_postreria',
+    'Postreria':      'lmc_checks_postreria'
+  }[suc] || '';
+
+  // Try QR check localStorage first
   try {
-    var raw = localStorage.getItem(checkKey);
-    if(raw){
-      var check = JSON.parse(raw);
-      var hoy = new Date().toISOString().split('T')[0];
-      if(check.fecha === hoy && (!check.folio || check.folio === f)){
-        if(check.entrada && horaIn && !horaIn.value) horaIn.value = check.entrada;
-        if(check.salida  && horaOut && !horaOut.value) horaOut.value = check.salida;
-        if(check.entrada || check.salida){
-          evMostrarCheckBadge(check);
-          return;
+    if(sucCheckKey){
+      var raw = localStorage.getItem(sucCheckKey);
+      if(raw){
+        var checkData = JSON.parse(raw);
+        var hoy = new Date().toISOString().split('T')[0];
+        // checkData._fecha = today, checkData[folio] = {entrada, salida}
+        if(checkData._fecha === hoy){
+          var folioCheck = checkData[f] || {};
+          if(folioCheck.entrada || folioCheck.salida){
+            if(folioCheck.entrada && horaIn  && !horaIn.value)  horaIn.value  = folioCheck.entrada;
+            if(folioCheck.salida  && horaOut && !horaOut.value) horaOut.value = folioCheck.salida;
+            evMostrarCheckBadge(folioCheck);
+            return;
+          }
         }
       }
     }

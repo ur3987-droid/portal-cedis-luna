@@ -3123,14 +3123,18 @@ function concRender(rows){
 
   rows.forEach(function(r, i){
     var esCancelada = r.estado === 'CANCELADA';
-    var montoEst = parseFloat((r.totalEstimado||'0').replace(/[$,]/g,'')) || 0;
-    var montoRe  = esCancelada ? 0 : (parseFloat((r.totalReal||'0').replace(/[$,]/g,'')) || (r.estado === 'VENCIDA' || r.estado === 'PENDIENTE' ? montoEst : 0));
+    // Parse monto — handle negative for transferencia emisora (-$1,250.00)
+    var _estStr  = String(r.totalEstimado||'0');
+    var _realStr = String(r.totalReal||'0');
+    var montoEst = parseFloat(_estStr.replace(/[^0-9.-]/g,''))  * (_estStr.indexOf('-')>=0 ? -1 : 1) || 0;
+    var montoRe  = esCancelada ? 0 : (parseFloat(_realStr.replace(/[^0-9.-]/g,'')) * (_realStr.indexOf('-')>=0 ? -1 : 1) || (r.estado==='VENCIDA'||r.estado==='PENDIENTE' ? montoEst : 0));
     var diff = montoRe - montoEst;
     var diffColor = diff === 0 ? '#2E9E6B' : diff < 0 ? '#D4504A' : '#2E9E6B';
-    var estadoColor = {EVALUADA:'#2E9E6B', PENDIENTE:'#E07B2A', VENCIDA:'#D4504A', CANCELADA:'#6B7E93'}[r.estado] || '#6B7E93';
+    var esTransfer = r.estado && r.estado.indexOf('TRANSFERENCIA') >= 0;
+    var estadoColor = {EVALUADA:'#2E9E6B', PENDIENTE:'#E07B2A', VENCIDA:'#D4504A', CANCELADA:'#6B7E93'}[r.estado] || (esTransfer ? '#1D4F73' : '#6B7E93');
 
     if(!esCancelada){
-      totalPed++;
+      if(!esTransfer) totalPed++; // Don't double-count transfers
       montoTotal += montoEst;
       montoReal  += montoRe;
     }

@@ -2284,7 +2284,7 @@ function evLoadDetalle(){
 function evCargarProductos(ped){
   evProductos=[];evRecibidos={};
   var ls=(ped.productos||'').split('\n').filter(function(l){return l.trim();});
-  ls.forEach(function(l){var p=l.split('|');if(p.length<5)return;var code=(p[0]||'').trim(),nombre=(p[1]||'').trim(),pres=(p[2]||'').trim(),precio=parseFloat((p[3]||'0').replace('$','').replace(',',''))||0,qty=parseInt((p[4]||'1').replace('x',''))||1;evProductos.push({code:code,nombre:nombre,pres:pres,precio:precio,qty:qty});evRecibidos[code]={rec:true,qty:qty,precio:precio};});
+  ls.forEach(function(l){var p=l.split('|');if(p.length<5)return;var code=(p[0]||'').trim(),nombre=(p[1]||'').trim(),pres=(p[2]||'').trim(),precio=parseFloat((p[3]||'0').replace('$','').replace(',',''))||0,qty=parseFloat((p[4]||'1').replace('x',''))||1;evProductos.push({code:code,nombre:nombre,pres:pres,precio:precio,qty:qty});evRecibidos[code]={rec:true,qty:qty,precio:precio};});
   document.getElementById('ev-folio-show').textContent=ped.folio;
   document.getElementById('ev-ped-info').textContent=ped.sucursal+' - '+ped.numProductos+' productos - Entrega: '+ped.fechaEntrega;
   var hrs=ped.hrsRestantes||0;var ti=document.getElementById('ev-tiempo');ti.textContent=hrs+'h restantes';ti.style.color=hrs>24?'#2E9E6B':'#E07B2A';
@@ -2358,7 +2358,17 @@ function evBuildSummary5(){
   var fd=function(d){if(!d)return '-';var p=d.split('-');return p[2]+'/'+p[1]+'/'+p[0];};
   document.getElementById('ev-sum-ped').innerHTML='<div class="ev-bhdr"><span>Pedido evaluado</span></div><div class="ev-row"><span class="ev-key">Folio SDP</span><span class="ev-val" style="font-family:Bebas Neue,sans-serif;font-size:16px;color:var(--blue);">'+evFolioActual+'</span></div><div class="ev-row"><span class="ev-key">Sucursal</span><span class="ev-val">'+suc+'</span></div><div class="ev-row"><span class="ev-key">Fecha</span><span class="ev-val">'+fd(fecha)+'</span></div><div class="ev-row"><span class="ev-key">Horario</span><span class="ev-val">'+hi+(ho?' - '+ho:'')+'</span></div><div class="ev-row"><span class="ev-key">Estado</span><span class="ev-val">'+est+'</span></div>';
   var orig=0,real=0,rows='',recArr=[],faltArr=[];
-  evProductos.forEach(function(p){var rec=evRecibidos[p.code]?evRecibidos[p.code].rec:true;var sub=p.precio*p.qty;orig+=sub;if(rec){real+=sub;recArr.push(p.code+'-'+p.nombre);}else faltArr.push(p.code+'-'+p.nombre);rows+='<tr style="'+(rec?'':'opacity:.5;background:#FEF5F5;')+'"><td style="padding:9px 14px;font-size:13px;">'+p.nombre+'</td><td style="padding:9px 14px;font-size:11px;font-family:monospace;">'+p.code+'</td><td style="padding:9px 14px;text-align:right;">'+p.qty+'</td><td style="padding:9px 14px;text-align:right;font-weight:700;color:var(--blue-dk);">'+(p.precio>0?'$'+sub.toFixed(2):'-')+'</td><td style="padding:9px 14px;">'+(rec?'<span style="color:#2E9E6B;font-weight:700;">OK</span>':'<span style="color:#D4504A;font-weight:700;">Falta</span>')+'</td></tr>';});
+  evProductos.forEach(function(p){
+    var er=evRecibidos[p.code]||{rec:true,qty:p.qty};
+    var rec=er.rec;
+    var qtyRec=parseFloat(er.qty)||0;
+    var sub=p.precio*p.qty;       // original
+    var subRec=p.precio*qtyRec;   // received
+    orig+=sub;
+    if(rec&&qtyRec>0){real+=subRec;recArr.push(p.code+'-'+p.nombre+(qtyRec!==p.qty?' ('+qtyRec+'/'+p.qty+')':''));}
+    else faltArr.push(p.code+'-'+p.nombre);
+    rows+='<tr style="'+(rec?'':'opacity:.5;background:#FEF5F5;')+'"><td style="padding:9px 14px;font-size:13px;">'+p.nombre+'</td><td style="padding:9px 14px;font-size:11px;font-family:monospace;">'+p.code+'</td><td style="padding:9px 14px;text-align:right;">'+qtyRec+'/'+p.qty+'</td><td style="padding:9px 14px;text-align:right;font-weight:700;color:var(--blue-dk);">'+(p.precio>0?'$'+subRec.toFixed(2):'-')+'</td><td style="padding:9px 14px;">'+(rec?'<span style="color:#2E9E6B;font-weight:700;">OK</span>':'<span style="color:#D4504A;font-weight:700;">Falta</span>')+'</td></tr>';
+  });
   document.getElementById('ev-sum-body').innerHTML=rows;
   document.getElementById('ev-sum-orig').textContent='$'+orig.toFixed(2);
   document.getElementById('ev-sum-real').textContent='$'+real.toFixed(2);

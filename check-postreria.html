@@ -199,7 +199,8 @@ function init() {
     .then(function(data){
       if(done)return;
       done=true;clearTimeout(timer);clearInterval(cnt);
-      pedidos=Array.isArray(data)?data:[];
+      // Exclude EN_RUTA - salida ya registrada, entrega completada
+      pedidos=Array.isArray(data)?data.filter(function(p){ return p.estado!=='EN_RUTA'; }):[];
       if(pedidos.length){
         var chks=loadChecks();
         var first=pedidos.find(function(p){var c=chks[p.folio]||{};return !c.entrada;})||pedidos[0];

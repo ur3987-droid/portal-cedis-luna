@@ -3569,36 +3569,22 @@ function transEnviar(){
     return code + '|' + p.nombre + '||$' + p.precio.toFixed(2) + '|' + p.qty + 'x|$' + (p.qty*p.precio).toFixed(2);
   }).join(';');
 
-  // Send via fetch POST
-  var btn = document.querySelector('#trans-inventario-wrap button:last-child');
-  if(btn){ btn.disabled=true; btn.textContent='⏳ Enviando...'; }
-  var body = new URLSearchParams();
-  body.append('tipo',          'transferencia');
-  body.append('folio',         folio);
-  body.append('timestamp',     ts);
-  body.append('emisora',       emisora);
-  body.append('receptora',     receptora);
-  body.append('totalEstimado', fmtMoney(total));
-  body.append('numProductos',  Object.keys(transPedido).length);
-  body.append('productos',     productosStr);
-  body.append('observaciones', obs);
-  body.append('enviadoPor',    sesionActual ? sesionActual.nombre : '');
-  fetch(SCRIPT_URL, {method:'POST', body:body})
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      if(d && d.result === 'ok'){
-        document.getElementById('trans-folio-ok').textContent = folio;
-        document.getElementById('trans-step1').style.display='none';
-        document.getElementById('trans-ok').style.display='block';
-      } else {
-        alert('Error al registrar transferencia: ' + (d ? d.msg : 'sin respuesta'));
-        if(btn){ btn.disabled=false; btn.textContent='Enviar Transferencia'; }
-      }
-    })
-    .catch(function(err){
-      alert('Error de conexión: ' + err);
-      if(btn){ btn.disabled=false; btn.textContent='Enviar Transferencia'; }
-    });
+  iframePost(SCRIPT_URL, {
+    tipo:           'transferencia',
+    folio:          folio,
+    timestamp:      ts,
+    emisora:        emisora,
+    receptora:      receptora,
+    totalEstimado:  fmtMoney(total),
+    numProductos:   Object.keys(transPedido).length,
+    productos:      productosStr,
+    observaciones:  obs,
+    enviadoPor:     sesionActual ? sesionActual.nombre : ''
+  }, function(){
+    document.getElementById('trans-folio-ok').textContent = folio;
+    document.getElementById('trans-step1').style.display='none';
+    document.getElementById('trans-ok').style.display='block';
+  });
 }
 
 // ══════════════════════════════════════════════════════════

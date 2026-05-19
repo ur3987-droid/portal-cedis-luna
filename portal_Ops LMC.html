@@ -3521,9 +3521,12 @@ function transActualizarTotal(){
 }
 
 function transEnviar(){
+  console.log('transEnviar llamado');
   var emisora   = document.getElementById('trans-emisora').value;
   var receptora = document.getElementById('trans-receptora').value;
   var obs       = document.getElementById('trans-obs').value;
+
+  console.log('emisora:', emisora, 'receptora:', receptora, 'productos:', Object.keys(transPedido).length);
 
   if(!emisora)  { alert('Selecciona la sucursal emisora.'); return; }
   if(!receptora){ alert('Selecciona la sucursal receptora.'); return; }
@@ -3540,7 +3543,7 @@ function transEnviar(){
     return code + '|' + p.nombre + '||$' + p.precio.toFixed(2) + '|' + p.qty + 'x|$' + (p.qty*p.precio).toFixed(2);
   }).join(';');
 
-    iframePost(SCRIPT_URL, {
+  iframePost(SCRIPT_URL, {
     tipo:          'transferencia',
     folio:         folio,
     timestamp:     ts,
@@ -3562,6 +3565,7 @@ function transEnviar(){
 // SESIÓN ACTIVA + ESPEJO EN TIEMPO REAL
 // ══════════════════════════════════════════════════════════
 var sesionEspejo   = false;
+var transPedido    = {}; // productos seleccionados para transferencia
 var espejoInterval = null;
 var pingInterval   = null;
 

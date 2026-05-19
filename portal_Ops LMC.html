@@ -3548,40 +3548,22 @@ function transEnviar(){
     return code + '|' + p.nombre + '||$' + p.precio.toFixed(2) + '|' + p.qty + 'x|$' + (p.qty*p.precio).toFixed(2);
   }).join(';');
 
-  // Build URL with all params
-  var transUrl = SCRIPT_URL
-    + '?tipo=transferencia'
-    + '&folio='         + encodeURIComponent(folio)
-    + '&timestamp='     + encodeURIComponent(ts)
-    + '&emisora='       + encodeURIComponent(emisora)
-    + '&receptora='     + encodeURIComponent(receptora)
-    + '&totalEstimado=' + encodeURIComponent(fmtMoney(total))
-    + '&numProductos='  + encodeURIComponent(Object.keys(transPedido).length)
-    + '&productos='     + encodeURIComponent(productosStr)
-    + '&observaciones=' + encodeURIComponent(obs||'')
-    + '&enviadoPor='    + encodeURIComponent(sesionActual ? sesionActual.nombre : '');
-
-  // Use no-cors mode - fires request, ignores CORS response
-  fetch(transUrl, {mode:'no-cors'})
-    .then(function(){
-      // Show success after 8 seconds (time for AS to process)
-      setTimeout(function(){
-        document.getElementById('trans-folio-ok').textContent = folio;
-        document.getElementById('trans-step1').style.display='none';
-        document.getElementById('trans-ok').style.display='block';
-      }, 8000);
-    })
-    .catch(function(){
-      // Even on error, AS may have processed it
-      setTimeout(function(){
-        document.getElementById('trans-folio-ok').textContent = folio;
-        document.getElementById('trans-step1').style.display='none';
-        document.getElementById('trans-ok').style.display='block';
-      }, 8000);
-    });
-  // Show loading state
-  var sendBtn = document.querySelector('#trans-inventario-wrap button:last-of-type');
-  if(sendBtn){ sendBtn.disabled=true; sendBtn.textContent='⏳ Enviando (8s)...'; }
+  iframePost(SCRIPT_URL, {
+    tipo:          'transferencia',
+    folio:         folio,
+    timestamp:     ts,
+    emisora:       emisora,
+    receptora:     receptora,
+    totalEstimado: fmtMoney(total),
+    numProductos:  Object.keys(transPedido).length,
+    productos:     productosStr,
+    observaciones: obs || '',
+    enviadoPor:    sesionActual ? sesionActual.nombre : ''
+  }, function(){
+    document.getElementById('trans-folio-ok').textContent = folio;
+    document.getElementById('trans-step1').style.display='none';
+    document.getElementById('trans-ok').style.display='block';
+  });
 }
 
 // ══════════════════════════════════════════════════════════

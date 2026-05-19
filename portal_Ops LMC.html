@@ -3332,7 +3332,12 @@ function histSdpRender(rows){
 
   rows.forEach(function(r, i){
     var esCancelada = r.estado === 'CANCELADA';
-    var estadoColor = {EVALUADA:'#2E9E6B',PENDIENTE:'#E07B2A',VENCIDA:'#D4504A',CANCELADA:'#6B7E93'}[r.estado] || '#6B7E93';
+    var estadoLabel = r.estado;
+    if(r.estado==='TRANSFERENCIA-EMISORA')   estadoLabel='🔄 Egreso';
+    if(r.estado==='TRANSFERENCIA-RECEPTORA') estadoLabel='🔄 Ingreso';
+    if(r.estado==='EN_RUTA') estadoLabel='🚚 En ruta';
+    var estadoColor = {EVALUADA:'#2E9E6B',PENDIENTE:'#E07B2A',VENCIDA:'#D4504A',CANCELADA:'#6B7E93',
+      'TRANSFERENCIA-EMISORA':'#D4504A','TRANSFERENCIA-RECEPTORA':'#2E9E6B','EN_RUTA':'#3C8EC8'}[r.estado] || '#6B7E93';
     var tipoColor = r.folio && r.folio.indexOf('-ASI') >= 0 ? '#3C8EC8' : r.folio && r.folio.indexOf('-EXT') >= 0 ? '#E07B2A' : '#2E9E6B';
 
     h += '<tr style="background:' + (i%2===0?'#fff':'#f5f8fc') + ';border-top:1px solid var(--grey-lt);' + (esCancelada?'opacity:.55;':'') + '">';

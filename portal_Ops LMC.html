@@ -3166,7 +3166,7 @@ function concRender(rows){
     var esUrielConc = sesionActual && (sesionActual.email === 'lunamediacafedo@gmail.com' || sesionActual.rol === 'admin');
     h += '<div style="display:flex;gap:4px;align-items:center;">';
     if(!esCancelada && r.estado !== 'EVALUADA'){
-      h += '<button onclick="conciliacionCancelarAbrir(' + JSON.stringify(r.folio) + ',' + JSON.stringify(r.sucursal) + ')" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid #D4504A;background:#fff;cursor:pointer;color:#D4504A;font-weight:600;">Cancelar</button>';
+      h += '<button onclick="cancelarRegistro(this)" data-folio="' + r.folio + '" data-suc="' + r.sucursal + '" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid #D4504A;background:#fff;cursor:pointer;color:#D4504A;font-weight:600;">Cancelar</button>';
     }
     if(esUrielConc){
       h += '<button onclick="borrarRegistro(this)" data-folio="' + r.folio + '" data-suc="' + r.sucursal + '" title="Eliminar definitivamente" style="background:#D4504A;color:#fff;padding:4px 8px;border-radius:6px;border:none;font-size:11px;cursor:pointer;">&#128465;</button>';
@@ -3193,6 +3193,12 @@ function concRender(rows){
   var d = montoReal - montoTotal;
   document.getElementById('conc-diferencia').textContent = (d>=0?'+':'') + fmtMoney(Math.abs(d));
   document.getElementById('conc-diferencia').style.color = d >= 0 ? '#2E9E6B' : '#D4504A';
+}
+
+function cancelarRegistro(btn){
+  var folio = btn.getAttribute('data-folio');
+  var suc   = btn.getAttribute('data-suc');
+  conciliacionCancelarAbrir(folio, suc);
 }
 
 function conciliacionCancelarAbrir(folio, sucursal){
@@ -3364,7 +3370,7 @@ function histSdpRender(rows){
       var esUrielSdp = sesionActual && (sesionActual.email === 'lunamediacafedo@gmail.com' || sesionActual.rol === 'admin');
       h += '<div style="display:flex;gap:4px;align-items:center;">';
       if(!esCancelada && r.estado !== 'EVALUADA'){
-        h += '<button onclick="conciliacionCancelarAbrir(' + JSON.stringify(r.folio) + ',' + JSON.stringify(r.sucursal) + ')" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid #D4504A;background:#fff;cursor:pointer;color:#D4504A;font-weight:600;">Cancelar</button>';
+        h += '<button onclick="cancelarRegistro(this)" data-folio="' + r.folio + '" data-suc="' + r.sucursal + '" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid #D4504A;background:#fff;cursor:pointer;color:#D4504A;font-weight:600;">Cancelar</button>';
       }
       if(esUrielSdp){
         h += '<button onclick="borrarRegistro(this)" data-folio="' + r.folio + '" data-suc="' + r.sucursal + '" title="Eliminar definitivamente" style="background:#D4504A;color:#fff;padding:4px 8px;border-radius:6px;border:none;font-size:11px;cursor:pointer;">&#128465;</button>';

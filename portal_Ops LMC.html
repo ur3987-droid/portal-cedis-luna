@@ -3162,7 +3162,7 @@ function concRender(rows){
     h += '<td style="padding:8px 12px;font-weight:700;color:' + diffColor + ';">' + (esCancelada ? '—' : ((diff >= 0 ? '+' : '') + fmtMoney(Math.abs(diff)))) + '</td>';
     h += '<td style="padding:8px 12px;"><span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;background:' + estadoColor + '22;color:' + estadoColor + ';">' + (estadoLabel||r.estado||'') + '</span></td>';
     h += '<td style="padding:8px 12px;">';
-    var esUrielConc = sesionActual && sesionActual.email === 'lunamediacafedo@gmail.com';
+    var esUrielConc = sesionActual && (sesionActual.email === 'lunamediacafedo@gmail.com' || sesionActual.rol === 'admin');
     h += '<div style="display:flex;gap:4px;align-items:center;">';
     if(!esCancelada && r.estado !== 'EVALUADA'){
       h += '<button onclick="conciliacionCancelarAbrir(' + JSON.stringify(r.folio) + ',' + JSON.stringify(r.sucursal) + ')" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid #D4504A;background:#fff;cursor:pointer;color:#D4504A;font-weight:600;">Cancelar</button>';
@@ -3360,7 +3360,7 @@ function histSdpRender(rows){
     // Cancel button (admin only, not already cancelled or evaluated)
     if(esAdmin){
       h += '<td style="padding:8px 12px;">';
-      var esUrielSdp = sesionActual && sesionActual.email === 'lunamediacafedo@gmail.com';
+      var esUrielSdp = sesionActual && (sesionActual.email === 'lunamediacafedo@gmail.com' || sesionActual.rol === 'admin');
       h += '<div style="display:flex;gap:4px;align-items:center;">';
       if(!esCancelada && r.estado !== 'EVALUADA'){
         h += '<button onclick="conciliacionCancelarAbrir(' + JSON.stringify(r.folio) + ',' + JSON.stringify(r.sucursal) + ')" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid #D4504A;background:#fff;cursor:pointer;color:#D4504A;font-weight:600;">Cancelar</button>';

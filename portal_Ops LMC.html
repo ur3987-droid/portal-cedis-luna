@@ -3548,7 +3548,8 @@ function transEnviar(){
     return code + '|' + p.nombre + '||$' + p.precio.toFixed(2) + '|' + p.qty + 'x|$' + (p.qty*p.precio).toFixed(2);
   }).join(';');
 
-  iframePost(SCRIPT_URL, {
+  // Submit via hidden form POST - same method as pedidos
+  var transPayload = {
     tipo:          'transferencia',
     folio:         folio,
     timestamp:     ts,
@@ -3559,11 +3560,34 @@ function transEnviar(){
     productos:     productosStr,
     observaciones: obs || '',
     enviadoPor:    sesionActual ? sesionActual.nombre : ''
-  }, function(){
+  };
+  var transIframeName = 'trans_iframe_' + Date.now();
+  var transIframe = document.createElement('iframe');
+  transIframe.name = transIframeName;
+  transIframe.style.display = 'none';
+  document.body.appendChild(transIframe);
+  var transForm = document.createElement('form');
+  transForm.method = 'POST';
+  transForm.action = SCRIPT_URL;
+  transForm.target  = transIframeName;
+  Object.keys(transPayload).forEach(function(k){
+    var inp = document.createElement('input');
+    inp.type='hidden'; inp.name=k; inp.value=transPayload[k];
+    transForm.appendChild(inp);
+  });
+  document.body.appendChild(transForm);
+  transIframe.onload = function(){
     document.getElementById('trans-folio-ok').textContent = folio;
     document.getElementById('trans-step1').style.display='none';
     document.getElementById('trans-ok').style.display='block';
-  });
+    setTimeout(function(){ transForm.remove(); transIframe.remove(); }, 2000);
+  };
+  setTimeout(function(){
+    document.getElementById('trans-folio-ok').textContent = folio;
+    document.getElementById('trans-step1').style.display='none';
+    document.getElementById('trans-ok').style.display='block';
+  }, 6000);
+  transForm.submit();
 }
 
 // ══════════════════════════════════════════════════════════

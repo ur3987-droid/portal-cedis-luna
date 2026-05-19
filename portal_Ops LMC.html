@@ -3358,10 +3358,10 @@ function histSdpRender(rows){
     h += '<td style="padding:8px 12px;"><span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;background:' + estadoColor + '22;color:' + estadoColor + ';">' + (estadoLabel||r.estado||'') + '</span></td>';
     // PDF button - links to Drive file
     h += '<td style="padding:8px 12px;">';
-    if(r.pdfUrl){
-      h += '<a href="' + r.pdfUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;background:var(--blue-lt);color:var(--blue);padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;text-decoration:none;border:1px solid rgba(60,142,200,.3);">&#128196; PDF</a>';
-    } else {
-      h += '<span style="font-size:11px;color:var(--grey-txt);">—</span>';
+    // Always show PDF button - loads on demand
+    h += '<button onclick="verPdfSDP(this)" data-folio="' + r.folio + '" data-suc="' + r.sucursal + '" data-tipo="Pedidos" data-url="' + (r.pdfUrl||'') + '" style="display:inline-flex;align-items:center;gap:4px;background:var(--blue-lt);color:var(--blue);padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;border:1px solid rgba(60,142,200,.3);cursor:pointer;">&#128196; PDF</button>';
+    if(false){
+      // disabled
     }
     h += '</td>';
     // Cancel button (admin only, not already cancelled or evaluated)
@@ -3388,6 +3388,22 @@ function histSdpRender(rows){
 function fmtMoney(val){
   var n = parseFloat(String(val).replace(/[$,]/g,'')) || 0;
   return '$' + n.toLocaleString('es-MX', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function verPdfSDP(btn){
+  var url  = btn.getAttribute('data-url');
+  var folio = btn.getAttribute('data-folio');
+  var suc   = btn.getAttribute('data-suc');
+  var tipo  = btn.getAttribute('data-tipo') || 'Pedidos';
+  if(url){ window.open(url, '_blank'); return; }
+  btn.textContent = '⏳';
+  fetch(SCRIPT_URL + '?tipo=get_pdf_url&folio=' + encodeURIComponent(folio) + '&sucursal=' + encodeURIComponent(suc) + '&tipo_doc=' + encodeURIComponent(tipo))
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d && d.url){ btn.setAttribute('data-url', d.url); window.open(d.url, '_blank'); btn.textContent='📄 PDF'; }
+      else { btn.textContent='Sin PDF'; }
+    })
+    .catch(function(){ btn.textContent='Error'; });
 }
 
 function borrarRegistro(btn){

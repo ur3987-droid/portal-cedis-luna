@@ -1344,7 +1344,7 @@ function setObs(code, val){
 function buildSummary(){
   // ASI if CEDIS origin selected (by CEDIS role or Admin choosing CEDIS)
   if(esCedisOrigen){
-    folioActual = 'SDP-' + Date.now().toString().slice(-6) + '-ASI';
+    folioActual = 'ASI-' + Date.now().toString().slice(-6);
   } else {
     // Determine Ordinaria or Extraordinaria based on fecha de entrega
     var fechaEntregaEl = document.getElementById('fechaEntrega') || document.getElementById('delivDate');
@@ -1417,7 +1417,7 @@ function submitPedido(){
   const payload = {
     tipo        : 'pedido',
     folio       : folioActual,
-    tipoSDP     : folioActual.indexOf('-ASI') >= 0 ? 'Asignacion' : (folioActual.indexOf('-EXT') >= 0 ? 'Extraordinaria' : 'Ordinaria'),
+    tipoSDP     : folioActual.indexOf('-ASI') >= 0 || folio.indexOf('ASI-') === 0 >= 0 ? 'Asignacion' : (folioActual.indexOf('-EXT') >= 0 ? 'Extraordinaria' : 'Ordinaria'),
     etiquetaGerente: (suc === 'Postrería' || suc === 'Postreria') ? 'Encargado' : 'Gerente',
     timestamp   : new Date(Date.now()+3600000).toLocaleString('es-MX', {hour12:false}),
     sucursal    : suc,
@@ -1470,7 +1470,7 @@ function showSuccess(payload, items, total){
   // Show tipo badge
   var tipoBadge = document.getElementById('s-tipo-badge');
   if(tipoBadge){
-    var esAsi = payload.folio.indexOf('-ASI') >= 0;
+    var esAsi = (payload.folio.indexOf('-ASI') >= 0 || payload.folio.indexOf('ASI-') === 0);
     var esExt = payload.folio.indexOf('-EXT') >= 0;
     if(esAsi){
       tipoBadge.textContent = 'Asignacion CEDIS';
@@ -3341,12 +3341,12 @@ function histSdpRender(rows){
     if(r.estado==='EN_RUTA') estadoLabel='🚚 En ruta';
     var estadoColor = {EVALUADA:'#2E9E6B',PENDIENTE:'#E07B2A',VENCIDA:'#D4504A',CANCELADA:'#6B7E93',
       'TRANSFERENCIA-EMISORA':'#D4504A','TRANSFERENCIA-RECEPTORA':'#2E9E6B','EN_RUTA':'#3C8EC8'}[r.estado] || '#6B7E93';
-    var tipoColor = r.folio && r.folio.indexOf('-ASI') >= 0 ? '#3C8EC8' : r.folio && r.folio.indexOf('-EXT') >= 0 ? '#E07B2A' : '#2E9E6B';
+    var tipoColor = r.folio && (r.folio.indexOf('-ASI') >= 0 || r.folio.indexOf('ASI-') === 0) ? '#3C8EC8' : r.folio && r.folio.indexOf('-EXT') >= 0 ? '#E07B2A' : '#2E9E6B';
 
     h += '<tr style="background:' + (i%2===0?'#fff':'#f5f8fc') + ';border-top:1px solid var(--grey-lt);' + (esCancelada?'opacity:.55;':'') + '">';
     h += '<td style="padding:8px 12px;white-space:nowrap;">';
     h += '<span style="font-family:monospace;font-weight:700;color:var(--blue);">' + (r.folio||'') + '</span>';
-    if(r.folio && r.folio.indexOf('-ASI') >= 0) h += '<br><span style="font-size:10px;background:rgba(60,142,200,.12);color:#3C8EC8;padding:1px 6px;border-radius:8px;">ASI</span>';
+    if(r.folio && (r.folio.indexOf('-ASI') >= 0 || r.folio.indexOf('ASI-') === 0)) h += '<br><span style="font-size:10px;background:rgba(60,142,200,.12);color:#3C8EC8;padding:1px 6px;border-radius:8px;">ASI</span>';
     else if(r.folio && r.folio.indexOf('-EXT') >= 0) h += '<br><span style="font-size:10px;background:rgba(224,123,42,.12);color:#E07B2A;padding:1px 6px;border-radius:8px;">EXT</span>';
     else h += '<br><span style="font-size:10px;background:rgba(46,158,107,.12);color:#2E9E6B;padding:1px 6px;border-radius:8px;">ORD</span>';
     h += '</td>';

@@ -3122,6 +3122,7 @@ function conciliacionCargar(){
 }
 
 function concRender(rows){
+  window._concDeleteItems = []; // store folio/sucursal for delete buttons
   var totalPed = 0, montoTotal = 0, montoReal = 0;
   var h = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
   h += '<thead><tr style="background:var(--blue-dkr);">';
@@ -3168,7 +3169,7 @@ function concRender(rows){
       h += '<button onclick="conciliacionCancelarAbrir(' + JSON.stringify(r.folio) + ',' + JSON.stringify(r.sucursal) + ')" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid #D4504A;background:#fff;cursor:pointer;color:#D4504A;font-weight:600;">Cancelar</button>';
     }
     if(esUrielConc){
-      h += '<button onclick="sdpEliminarLinea(' + JSON.stringify(r.folio) + ',' + JSON.stringify(r.sucursal) + ')" title="Eliminar definitivamente" style="background:#D4504A;color:#fff;padding:4px 8px;border-radius:6px;border:none;font-size:11px;cursor:pointer;">&#128465;</button>';
+      h += '<button onclick="borrarRegistro(this)" data-folio="' + r.folio + '" data-suc="' + r.sucursal + '" title="Eliminar definitivamente" style="background:#D4504A;color:#fff;padding:4px 8px;border-radius:6px;border:none;font-size:11px;cursor:pointer;">&#128465;</button>';
     }
     h += '</div>';
     h += '</td></tr>';
@@ -3366,7 +3367,7 @@ function histSdpRender(rows){
         h += '<button onclick="conciliacionCancelarAbrir(' + JSON.stringify(r.folio) + ',' + JSON.stringify(r.sucursal) + ')" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid #D4504A;background:#fff;cursor:pointer;color:#D4504A;font-weight:600;">Cancelar</button>';
       }
       if(esUrielSdp){
-        h += '<button onclick="sdpEliminarLinea(' + JSON.stringify(r.folio) + ',' + JSON.stringify(r.sucursal) + ')" title="Eliminar definitivamente" style="background:#D4504A;color:#fff;padding:4px 8px;border-radius:6px;border:none;font-size:11px;cursor:pointer;">&#128465;</button>';
+        h += '<button onclick="borrarRegistro(this)" data-folio="' + r.folio + '" data-suc="' + r.sucursal + '" title="Eliminar definitivamente" style="background:#D4504A;color:#fff;padding:4px 8px;border-radius:6px;border:none;font-size:11px;cursor:pointer;">&#128465;</button>';
       }
       h += '</div>';
       h += '</td>';
@@ -3381,6 +3382,12 @@ function histSdpRender(rows){
 function fmtMoney(val){
   var n = parseFloat(String(val).replace(/[$,]/g,'')) || 0;
   return '$' + n.toLocaleString('es-MX', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function borrarRegistro(btn){
+  var folio = btn.getAttribute('data-folio');
+  var suc   = btn.getAttribute('data-suc');
+  sdpEliminarLinea(folio, suc);
 }
 
 function sdpEliminarLinea(folio, sucursal){

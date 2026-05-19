@@ -3209,24 +3209,20 @@ function conciliacionCancelarConfirmar(){
   if(!motivo){ alert('Selecciona un motivo de cancelacion.'); return; }
   var obs = document.getElementById('cancel-obs').value;
   document.getElementById('modal-cancelar').style.display = 'none';
-  var cancUrl = SCRIPT_URL
-    + '?tipo=cancelar_sdp'
-    + '&folio='         + encodeURIComponent(concFolioActual)
-    + '&sucursal='      + encodeURIComponent(concSucActual)
-    + '&motivo='        + encodeURIComponent(motivo)
-    + '&observaciones=' + encodeURIComponent(obs)
-    + '&canceladoPor='  + encodeURIComponent(sesionActual ? sesionActual.nombre : 'Admin')
-    + '&timestamp='     + encodeURIComponent(new Date(Date.now()+3600000).toLocaleString('es-MX',{hour12:false}));
-  fetch(cancUrl)
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      var mod7=document.getElementById('mod7');
-      if(mod7 && mod7.classList.contains('active')) histSdpCargar();
-      else conciliacionCargar();
-      if(d && d.result==='ok') alert('SDP '+concFolioActual+' cancelada. Notificaciones enviadas.');
-      else alert('Error: '+(d?d.msg:'sin respuesta'));
-    })
-    .catch(function(err){ alert('Error: '+err); });
+  iframePost(SCRIPT_URL, {
+    tipo: 'cancelar_sdp',
+    folio: concFolioActual,
+    sucursal: concSucActual,
+    motivo: motivo,
+    observaciones: obs,
+    canceladoPor: sesionActual ? sesionActual.nombre : 'Admin',
+    timestamp: new Date(Date.now()+3600000).toLocaleString('es-MX',{hour12:false})
+  }, function(){
+    var mod7=document.getElementById('mod7');
+    if(mod7 && mod7.classList.contains('active')) histSdpCargar();
+    else conciliacionCargar();
+    alert('SDP '+concFolioActual+' cancelada. Notificaciones enviadas.');
+  });
 }
 
 // Set default dates for conciliacion (current month)
@@ -3389,28 +3385,20 @@ function fmtMoney(val){
 
 function sdpEliminarLinea(folio, sucursal){
   if(!confirm('Eliminar definitivamente la SDP ' + folio + '?\n\nEsta accion no se puede deshacer.')) return;
-  fetch(SCRIPT_URL + '?tipo=eliminar_sdp&folio=' + encodeURIComponent(folio) + '&sucursal=' + encodeURIComponent(sucursal))
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      if(d && d.result==='ok'){
-        var mod5=document.getElementById('mod5'), mod7=document.getElementById('mod7');
-        if(mod5 && mod5.classList.contains('active')) conciliacionCargar();
-        if(mod7 && mod7.classList.contains('active')) histSdpCargar();
-        alert('Eliminado correctamente.');
-      } else { alert('Error: '+(d?d.msg:'sin respuesta')); }
-    })
-    .catch(function(err){ alert('Error: '+err); });
+  iframePost(SCRIPT_URL, {tipo:'eliminar_sdp', folio:folio, sucursal:sucursal}, function(){
+    var mod5=document.getElementById('mod5'), mod7=document.getElementById('mod7');
+    if(mod5 && mod5.classList.contains('active')) conciliacionCargar();
+    if(mod7 && mod7.classList.contains('active')) histSdpCargar();
+    alert('Eliminado correctamente.');
+  });
 }
 
 function histInvEliminarLinea(folio){
   if(!confirm('Eliminar definitivamente el inventario ' + folio + '?\n\nEsta accion no se puede deshacer.')) return;
-  fetch(SCRIPT_URL + '?tipo=eliminar_inv&folio=' + encodeURIComponent(folio))
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      if(d && d.result==='ok'){ histCargar(); alert('Eliminado correctamente.'); }
-      else alert('Error: '+(d?d.msg:'sin respuesta'));
-    })
-    .catch(function(err){ alert('Error: '+err); });
+  iframePost(SCRIPT_URL, {tipo:'eliminar_inv', folio:folio}, function(){
+    histCargar();
+    alert('Eliminado correctamente.');
+  });
 }
 
 
@@ -3418,14 +3406,9 @@ function histInvEliminarLinea(folio){
 function eliminarLineaSDP(folio, sucursal, btn){
   if(!confirm('¿Eliminar definitivamente la SDP ' + folio + '? Esta acción no se puede deshacer.')) return;
   btn.disabled = true; btn.textContent = '...';
-  fetch(SCRIPT_URL + '?tipo=eliminar_sdp&folio=' + encodeURIComponent(folio) + '&sucursal=' + encodeURIComponent(sucursal))
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      if(d && d.result==='ok'){
-        var row=btn.closest('tr'); if(row) row.remove();
-      } else { btn.disabled=false; btn.textContent='🗑'; alert('Error: '+(d?d.msg:'')); }
-    })
-    .catch(function(){ btn.disabled=false; btn.textContent='🗑'; });
+  iframePost(SCRIPT_URL, {tipo:'eliminar_sdp', folio:folio, sucursal:sucursal}, function(){
+    var row=btn.closest('tr'); if(row) row.remove();
+  });
 }
 
 // ══ GESTIÓN DE TELÉFONOS CEDIS (solo Admin) ══
@@ -3558,37 +3541,22 @@ function transEnviar(){
     return code + '|' + p.nombre + '||$' + p.precio.toFixed(2) + '|' + p.qty + 'x|$' + (p.qty*p.precio).toFixed(2);
   }).join(';');
 
-  var transBtn = document.querySelector('#trans-inventario-wrap .btn');
-  if(transBtn){ transBtn.disabled=true; transBtn.textContent='⏳ Registrando...'; }
-
-  var transUrl = SCRIPT_URL
-    + '?tipo=transferencia'
-    + '&folio='          + encodeURIComponent(folio)
-    + '&timestamp='      + encodeURIComponent(ts)
-    + '&emisora='        + encodeURIComponent(emisora)
-    + '&receptora='      + encodeURIComponent(receptora)
-    + '&totalEstimado='  + encodeURIComponent(fmtMoney(total))
-    + '&numProductos='   + encodeURIComponent(Object.keys(transPedido).length)
-    + '&productos='      + encodeURIComponent(productosStr)
-    + '&observaciones='  + encodeURIComponent(obs||'')
-    + '&enviadoPor='     + encodeURIComponent(sesionActual ? sesionActual.nombre : '');
-
-  fetch(transUrl)
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      if(d && d.result === 'ok'){
-        document.getElementById('trans-folio-ok').textContent = folio;
-        document.getElementById('trans-step1').style.display='none';
-        document.getElementById('trans-ok').style.display='block';
-      } else {
-        alert('Error: ' + (d ? d.msg : 'sin respuesta'));
-        if(transBtn){ transBtn.disabled=false; transBtn.textContent='Enviar Transferencia'; }
-      }
-    })
-    .catch(function(err){
-      alert('Error de conexión: ' + err);
-      if(transBtn){ transBtn.disabled=false; transBtn.textContent='Enviar Transferencia'; }
-    });
+  iframePost(SCRIPT_URL, {
+    tipo:           'transferencia',
+    folio:          folio,
+    timestamp:      ts,
+    emisora:        emisora,
+    receptora:      receptora,
+    totalEstimado:  fmtMoney(total),
+    numProductos:   Object.keys(transPedido).length,
+    productos:      productosStr,
+    observaciones:  obs || '',
+    enviadoPor:     sesionActual ? sesionActual.nombre : ''
+  }, function(){
+    document.getElementById('trans-folio-ok').textContent = folio;
+    document.getElementById('trans-step1').style.display='none';
+    document.getElementById('trans-ok').style.display='block';
+  });
 }
 
 // ══════════════════════════════════════════════════════════

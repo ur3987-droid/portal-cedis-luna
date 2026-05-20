@@ -1241,6 +1241,19 @@ function setCat(cat){
 
 function filterProducts(){ renderProducts(); }
 
+function updateCart(){
+  // Update cart badge with item count and total
+  var count = Object.keys(pedido).filter(function(k){ return pedido[k].qty > 0; }).length;
+  var total = Object.keys(pedido).reduce(function(s,k){
+    var p = CATALOGO.find(function(x){ return x.code===k; });
+    return s + (p ? (p.price||0) * (pedido[k].qty||0) : 0);
+  }, 0);
+  var badge = document.querySelector('.cart-badge');
+  if(badge) badge.textContent = count + ' producto' + (count !== 1 ? 's' : '');
+  var totalEl = document.getElementById('cart-total');
+  if(totalEl) totalEl.textContent = '$' + total.toFixed(2);
+}
+
 function renderProducts(){
   const q = document.getElementById('searchInput').value.toLowerCase();
   const container = document.getElementById('catalogContainer');

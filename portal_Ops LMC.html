@@ -1434,7 +1434,7 @@ function submitPedido(){
   const payload = {
     tipo        : 'pedido',
     folio       : folioActual,
-    tipoSDP     : folioActual.indexOf('-ASI') >= 0 || folio.indexOf('ASI-') === 0 >= 0 ? 'Asignacion' : (folioActual.indexOf('-EXT') >= 0 ? 'Extraordinaria' : 'Ordinaria'),
+    tipoSDP     : (folioActual.indexOf('-ASI') >= 0 || folioActual.indexOf('ASI-') === 0) ? 'Asignacion' : (folioActual.indexOf('-EXT') >= 0 ? 'Extraordinaria' : 'Ordinaria'),
     etiquetaGerente: (suc === 'Postrería' || suc === 'Postreria') ? 'Encargado' : 'Gerente',
     timestamp   : new Date(Date.now()+3600000).toLocaleString('es-MX', {hour12:false}),
     sucursal    : suc,

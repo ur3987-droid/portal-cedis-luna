@@ -1359,8 +1359,9 @@ function setObs(code, val){
 
 
 function buildSummary(){
-  // ASI if CEDIS origin selected (by CEDIS role or Admin choosing CEDIS)
-  if(esCedisOrigen){
+  // ASI if admin or cedis role (they always assign)
+  var esRolAsignador = sesionActual && (sesionActual.rol === 'admin' || sesionActual.rol === 'cedis');
+  if(esCedisOrigen || esRolAsignador){
     folioActual = 'ASI-' + Date.now().toString().slice(-6);
   } else {
     // Determine Ordinaria or Extraordinaria based on fecha de entrega
@@ -2620,6 +2621,11 @@ function aplicarRol(){
   Object.keys(tabsPermitidos).forEach(function(id){
     var el = document.getElementById(id);
     if(!el) return;
+    // CDP: solo Evaluacion (ntab3) e Historial SDP (ntab7)
+    if(sesionActual && sesionActual.email === 'cdplunamediacafe@gmail.com'){
+      el.style.display = (id === 'ntab3' || id === 'ntab7') ? 'flex' : 'none';
+      return;
+    }
     // Admin siempre ve todo
     el.style.display = (rol === 'admin' || tabsPermitidos[id].indexOf(rol) >= 0) ? 'flex' : 'none';
   });

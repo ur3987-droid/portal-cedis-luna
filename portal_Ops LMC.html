@@ -1360,8 +1360,10 @@ function setObs(code, val){
 
 function buildSummary(){
   // ASI if admin or cedis role (they always assign)
+  var sucOrigenVal = document.getElementById('sucursal') ? document.getElementById('sucursal').value : '';
+  var esCedisOrigenLocal = (sucOrigenVal === 'CEDIS');
   var esRolAsignador = sesionActual && (sesionActual.rol === 'admin' || sesionActual.rol === 'cedis');
-  if(esCedisOrigen || esRolAsignador){
+  if(esCedisOrigenLocal || esRolAsignador){
     folioActual = 'ASI-' + Date.now().toString().slice(-6);
   } else {
     // Determine Ordinaria or Extraordinaria based on fecha de entrega

@@ -1426,8 +1426,10 @@ function fmtDate(d){
 
 // ── SUBMIT ──
 function submitPedido(){
-  const suc = document.getElementById('sucursal').value;
-  const info = SUCURSALES[suc];
+  const sucOrigen = document.getElementById('sucursal').value;
+  const destinoEl = document.getElementById('sdp-destino');
+  const suc = (sucOrigen === 'CEDIS' && destinoEl && destinoEl.value) ? destinoEl.value : sucOrigen;
+  const info = SUCURSALES[suc] || {correo:'', gerente:''};
   const items = CATALOGO.filter(p=>pedido[p.code]&&pedido[p.code].qty>0);
   const total = items.reduce((s,p)=>s+(p.precio*(pedido[p.code].qty||0)),0);
 

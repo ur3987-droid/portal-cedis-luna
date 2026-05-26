@@ -3493,8 +3493,12 @@ function sdpEliminarLinea(folio, sucursal){
 
 function histInvEliminarLinea(folio){
   if(!confirm('Eliminar definitivamente el inventario ' + folio + '?\n\nEsta accion no se puede deshacer.')) return;
-  iframePost(SCRIPT_URL, {tipo:'eliminar_inv', folio:folio}, function(){
-    histCargar(); alert('Eliminado correctamente.');
+  iframePost(SCRIPT_URL, {
+    tipo:'eliminar_inv',
+    folio:folio,
+    canceladoPor: sesionActual ? sesionActual.nombre : 'Admin'
+  }, function(){
+    histCargar(); alert('Inventario cancelado. Se enviaron notificaciones.');
   });
 }
 

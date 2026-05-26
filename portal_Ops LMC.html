@@ -289,7 +289,8 @@ textarea{resize:vertical;min-height:72px;line-height:1.6;}
     <div class="ntab" id="ntab5" onclick="showMod(5)" style="display:none;">&#128179; Compras Conciliadas</div>
     <button id="btn-transferencias" onclick="abrirTransferencias()" style="display:block;background:#E8F7F1;color:#2E9E6B;border:1px solid rgba(46,158,107,.3);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;margin:auto 0 auto 8px;">🔄 Transferencias</button>
 
-  </div>
+  </di
+    <button id="btn-reporte" onclick="generarReporte()" style="display:none;background:#1D4F73;color:#fff;border:none;border-radius:10px;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer;margin-left:8px;">📊 Reporte Ejecutivo</button>v>
 </div>
 
 <!-- MOD1: SDP -->
@@ -1123,11 +1124,13 @@ function cargarCatalogoDinamico(cb) {
       if(data && data.length > 0){
         CATALOGO = data.map(function(p){
           return {
-            code: String(p.code||'').trim(),
-            cat:  String(p.cat||'').trim(),
-            name: String(p.name||'').trim(),
-            pres: String(p.pres||'').trim(),
-            precio: parseFloat(p.precio)||0
+            code:      String(p.code||'').trim(),
+            cat:       String(p.cat||'').trim(),
+            name:      String(p.name||'').trim(),
+            pres:      String(p.pres||'').trim(),
+            precio:    parseFloat(p.precio)||0,
+            unidad:    String(p.unidad||'').trim(),
+            precioUnit:parseFloat(p.precioUnit)||parseFloat(p.precio)||0
           };
         });
       }
@@ -1718,27 +1721,27 @@ function invRender(){
     h += '<div style="margin-bottom:20px;">';
     h += '<div style="font-family:Bebas Neue,sans-serif;font-size:18px;letter-spacing:.07em;color:var(--dark);padding:8px 0 6px;border-bottom:2px solid var(--blue-lt);margin-bottom:0;">' + cat + ' <span style="font-family:DM Sans,sans-serif;font-size:12px;font-weight:400;color:var(--grey-txt);">' + pr.length + ' productos</span></div>';
     h += '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:0 0 12px 12px;overflow:hidden;">';
-    h += '<div style="display:grid;grid-template-columns:90px 1fr 140px 80px 100px;background:var(--blue-dkr);padding:8px 14px;gap:10px;">';
+    h += '<div style="display:grid;grid-template-columns:90px 1fr 60px 90px 110px;background:var(--blue-dkr);padding:8px 14px;gap:10px;">';
     h += '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Codigo</div>';
     h += '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Producto</div>';
-    h += '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Presentacion</div>';
-    h += '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Precio</div>';
-    h += '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Cantidad</div></div>';
+    h += '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Unidad</div>';
+    h += '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;">Precio c/u</div>';
+    h += '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;text-align:right;">Cantidad</div></div>';
     pr.forEach(function(p){
       var q2 = invConteo[p.code] !== undefined ? invConteo[p.code] : '';
       var esCero = q2 === '' || q2 === undefined || parseFloat(q2) === 0 || isNaN(parseFloat(q2));
       var bg = esCero ? 'background:#FEF5F5;' : 'background:#fff;';
-      h += '<div style="display:grid;grid-template-columns:90px 1fr 140px 80px 100px;padding:9px 14px;gap:10px;align-items:center;border-top:1px solid var(--grey-lt);' + bg + '">';
+      h += '<div style="display:grid;grid-template-columns:90px 1fr 60px 90px 110px;padding:9px 14px;gap:10px;align-items:center;border-top:1px solid var(--grey-lt);' + bg + '">';
       h += '<div style="font-size:11px;font-weight:700;color:var(--blue-dk);font-family:monospace;">' + p.code + '</div>';
-      h += '<div style="font-size:13px;color:var(--dark);">' + p.name + '</div>';
-      h += '<div style="font-size:11px;color:var(--grey-txt);">' + p.pres + '</div>';
-      h += '<div style="font-size:12px;font-weight:600;color:var(--blue-dk);">' + (p.precio > 0 ? '$' + p.precio.toFixed(2) : '') + '</div>';
-      h += '<div><input type="number" min="0" step="0.01" value="' + q2 + '" id="invq-' + p.code + '" data-code="' + p.code + '" onchange="invSet(this.dataset.code, this.value)" style="width:90px;padding:6px 10px;border:1.5px solid ' + (esCero ? '#D4504A' : 'var(--grey-mid)') + ';border-radius:7px;font-family:DM Sans,sans-serif;font-size:13px;font-weight:600;outline:none;text-align:right;"></div>';
+      h += '<div style="font-size:13px;color:var(--dark);">' + p.name + '<br><span style="font-size:10px;color:var(--grey-txt);">' + p.pres + '</span></div>';
+      h += '<div style="font-size:11px;color:var(--blue);font-weight:700;">' + (p.unidad||p.pres||'') + '</div>';
+      h += '<div style="font-size:12px;font-weight:600;color:var(--blue-dk);">' + ((p.precioUnit||p.precio) > 0 ? '$' + (p.precioUnit||p.precio).toFixed(2) : '') + '<br><span style="font-size:9px;color:var(--grey-txt);">c/u</span></div>';
+      h += '<div style="display:flex;align-items:center;gap:5px;justify-content:flex-end;"><input type="number" min="0" step="0.01" value="' + q2 + '" id="invq-' + p.code + '" data-code="' + p.code + '" onchange="invSet(this.dataset.code, this.value)" style="width:70px;padding:6px 8px;border:1.5px solid ' + (esCero ? '#D4504A' : 'var(--grey-mid)') + ';border-radius:7px;font-family:DM Sans,sans-serif;font-size:13px;font-weight:600;outline:none;text-align:right;"><span style="font-size:11px;color:var(--grey-txt);font-weight:600;">' + (p.unidad||'') + '</span></div>';
       h += '</div>';
     });
     // Subtotal por area
     var catId = cat.replace(/[^a-zA-Z0-9]/g,'_');
-    h += '<div style="display:grid;grid-template-columns:90px 1fr 140px 80px 100px;padding:9px 14px;gap:10px;background:var(--blue-lt);border-top:2px solid var(--blue-mid);">';
+    h += '<div style="display:grid;grid-template-columns:90px 1fr 80px 80px 100px;padding:9px 14px;gap:10px;background:var(--blue-lt);border-top:2px solid var(--blue-mid);">';
     h += '<div></div><div style="font-size:12px;font-weight:700;color:var(--blue-dkr);">SUBTOTAL ' + cat + '</div><div></div><div></div>';
     h += '<div id="subtotal-' + catId + '" style="font-size:13px;font-weight:700;color:var(--blue-dkr);text-align:right;">0.00</div>';
     h += '</div>';
@@ -1861,7 +1864,7 @@ function invSubmit(){
     return p.cat !== 'POSTRERIA INSUMOS';
   }).map(function(p){
     var val = invConteo[p.code] !== undefined ? parseFloat(invConteo[p.code])||0 : 0;
-    return {code:p.code, name:p.name, pres:p.pres, cat:p.cat, precio:p.precio||0, cantidad:val, subtotal:val*(p.precio||0)};
+    return {code:p.code, name:p.name, pres:p.pres, cat:p.cat, precio:p.precioUnit||p.precio||0, unidad:p.unidad||'', cantidad:val, subtotal:val*(p.precioUnit||p.precio||0)};
   });
 
   var rowsConExistencia = rows.filter(function(r){ return r.cantidad > 0; });
@@ -1936,7 +1939,7 @@ function invSubmit(){
     // Send to Apps Script via iframe POST (only products with quantity > 0)
     document.getElementById('loadingTxt').textContent = 'Enviando a correos...';
     var conExistencia = rows.filter(function(r){ return r.cantidad > 0; });
-    var resumen = rowsConExistencia.map(function(r){ return r.code+'|'+r.name+'|'+r.cantidad.toFixed(2)+'|$'+r.precio.toFixed(2); }).join(';');
+    var resumen = rowsConExistencia.map(function(r){ var pu=r.precioUnit||r.precio||0; return r.code+'|'+r.name+'|'+(r.unidad||'')+' |$'+pu.toFixed(2)+'|'+r.cantidad.toFixed(2)+'|$'+(r.cantidad*pu).toFixed(2); }).join(';');
 
     function finalizarInv(){
   invEnviando = false; // Release lock
@@ -3292,11 +3295,13 @@ function cargarCatalogoDinamico(cb) {
       if(data && data.length > 0){
         CATALOGO = data.map(function(p){
           return {
-            code: String(p.code||'').trim(),
-            cat:  String(p.cat||'').trim(),
-            name: String(p.name||'').trim(),
-            pres: String(p.pres||'').trim(),
-            precio: parseFloat(p.precio)||0
+            code:      String(p.code||'').trim(),
+            cat:       String(p.cat||'').trim(),
+            name:      String(p.name||'').trim(),
+            pres:      String(p.pres||'').trim(),
+            precio:    parseFloat(p.precio)||0,
+            unidad:    String(p.unidad||'').trim(),
+            precioUnit:parseFloat(p.precioUnit)||parseFloat(p.precio)||0
           };
         });
       }
@@ -3437,6 +3442,25 @@ function verPdfSDP(btn){
       else { btn.textContent='Sin PDF'; }
     })
     .catch(function(){ btn.textContent='Error'; });
+}
+
+function generarReporte(){
+  var btn = document.getElementById('btn-reporte');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Generando...'; }
+  fetch(SCRIPT_URL + '?tipo=reporte_ejecutivo')
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d && d.url){
+        window.open(d.url, '_blank');
+        alert('✅ Reporte generado exitosamente. Se abrirá en una nueva pestaña.');
+      } else {
+        alert('Error al generar reporte: ' + (d ? d.msg : 'sin respuesta'));
+      }
+    })
+    .catch(function(err){ alert('Error: ' + err); })
+    .finally(function(){
+      if(btn){ btn.disabled=false; btn.textContent='📊 Reporte Ejecutivo'; }
+    });
 }
 
 function borrarRegistro(btn){

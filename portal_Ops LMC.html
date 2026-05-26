@@ -1261,7 +1261,9 @@ function updateCart(){
 function renderProducts(){
   const q = document.getElementById('searchInput').value.toLowerCase();
   const container = document.getElementById('catalogContainer');
-  const sucVal = document.getElementById('sucursal') ? document.getElementById('sucursal').value : '';
+  const _sucOrigen = document.getElementById('sucursal') ? document.getElementById('sucursal').value : '';
+  const _sucDestino = document.getElementById('sdp-destino') ? document.getElementById('sdp-destino').value : '';
+  const sucVal = (_sucOrigen === 'CEDIS' && _sucDestino) ? _sucDestino : _sucOrigen;
   const filtered = CATALOGO.filter(p=>{
     // Filter by sucursal
     let catOk;

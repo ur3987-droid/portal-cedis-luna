@@ -1265,7 +1265,8 @@ function renderProducts(){
   const filtered = CATALOGO.filter(p=>{
     // Filter by sucursal
     let catOk;
-    if(sucVal === 'Postrería') catOk = p.cat === 'POSTRERIA INSUMOS';
+    if(sucVal === 'CDP') catOk = true;
+    else if(sucVal === 'Postrería') catOk = p.cat === 'POSTRERIA INSUMOS';
     else catOk = p.cat !== 'POSTRERIA INSUMOS';
     const matchCat = catOk && (activeCat==='Todos' || p.cat===activeCat);
     const matchQ = !q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q);
@@ -1765,6 +1766,8 @@ function invUpdateTotals(){
   var suc = document.getElementById('inv-suc') ? document.getElementById('inv-suc').value : '';
   var cat = (CATALOGO && CATALOGO.length > 0) ? CATALOGO : (typeof CATALOGO_LOCAL !== 'undefined' ? CATALOGO_LOCAL : []);
   var catFiltrado = cat.filter(function(p){
+    if(suc === 'CDP') return true; // CDP sees all categories
+    if(suc === 'CDP') return true;
     if(suc === 'Postreria' || suc === 'Postrería') return p.cat === 'POSTRERIA INSUMOS';
     return p.cat !== 'POSTRERIA INSUMOS';
   });
@@ -1810,6 +1813,8 @@ function invBuildSugerencias(){
   var cat = (CATALOGO && CATALOGO.length > 0) ? CATALOGO : (typeof CATALOGO_LOCAL !== 'undefined' ? CATALOGO_LOCAL : []);
   // Usar mismo filtro que invRender
   var catFiltrado = cat.filter(function(p){
+    if(suc === 'CDP') return true; // CDP sees all categories
+    if(suc === 'CDP') return true;
     if(suc === 'Postreria' || suc === 'Postrería') return p.cat === 'POSTRERIA INSUMOS';
     return p.cat !== 'POSTRERIA INSUMOS';
   });
@@ -1860,6 +1865,8 @@ function invSubmit(){
 
   // Build inventory data
   var rows = cat.filter(function(p){
+    if(suc === 'CDP') return true; // CDP sees all categories
+    if(suc === 'CDP') return true;
     if(suc === 'Postreria' || suc === 'Postrería') return p.cat === 'POSTRERIA INSUMOS';
     return p.cat !== 'POSTRERIA INSUMOS';
   }).map(function(p){
@@ -1961,11 +1968,12 @@ function invSubmit(){
     // Send inventory data WITHOUT pdfBase64 (too large, truncates payload)
     // Build full conteo string: code|cantidad for all products
     var conteoCompleto = cat.filter(function(p){
+      if(suc === 'CDP') return true;
       if(suc === 'Postreria' || suc === 'Postrería') return p.cat === 'POSTRERIA INSUMOS';
       return p.cat !== 'POSTRERIA INSUMOS';
     }).map(function(p){
       var val = invConteo[p.code] !== undefined ? (parseFloat(invConteo[p.code])||0) : 0;
-      return p.code + '|' + val.toFixed(2);
+      return p.code + '|' + val.toFixed(2) + '|' + (p.name||'') + '|' + (p.pres||'');
     }).join(';');
 
     iframePost(SCRIPT_URL, {
@@ -2504,6 +2512,8 @@ function invMostrarSugereciasOk(){
   var cat = (CATALOGO && CATALOGO.length > 0) ? CATALOGO : (typeof CATALOGO_LOCAL !== 'undefined' ? CATALOGO_LOCAL : []);
   var suc = document.getElementById('inv-suc').value;
   var catFiltrado = cat.filter(function(p){
+    if(suc === 'CDP') return true; // CDP sees all categories
+    if(suc === 'CDP') return true;
     if(suc === 'Postreria' || suc === 'Postrería') return p.cat === 'POSTRERIA INSUMOS';
     return p.cat !== 'POSTRERIA INSUMOS';
   });
@@ -3559,6 +3569,7 @@ function transRenderProductos(existencia, emisora){
   // Filter by sucursal type
   var prods = cat.filter(function(p){
     var esPost = emisora === 'Postrería' || emisora === 'Postreria';
+    if(emisora === 'CDP') return true;
     if(esPost) return p.cat === 'POSTRERIA INSUMOS';
     return p.cat !== 'POSTRERIA INSUMOS';
   }).filter(function(p){ return existencia[p.code] > 0; });

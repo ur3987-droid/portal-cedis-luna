@@ -2022,7 +2022,7 @@ function invGuardarHistorial(folio, suc, fecha, totalItems, totalCosto, doc){
 function histTab(suc){
   histFiltro = suc;
   var tabs = ['all','ac','pj','po'];
-  var keys = ['all','Avila Camacho','Paseo Jardines','Postreria'];
+  var keys = ['all','Ávila Camacho','Paseo Jardines','Postrería'];
   tabs.forEach(function(t,i){
     var el = document.getElementById('htab-'+t);
     if(!el) return;
@@ -2076,7 +2076,11 @@ function histRender(){
       return iSuc === sucNorm || iSuc === sucNorm.normalize('NFD').replace(/[\u0300-\u036f]/g,'') || sucNorm.normalize('NFD').replace(/[\u0300-\u036f]/g,'') === iSuc.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     });
   } else if(histFiltro!=='all'){
-    data = data.filter(function(i){return i.sucursal===histFiltro;});
+    data = data.filter(function(i){
+    var iS = (i.sucursal||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+    var fS = (histFiltro||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+    return iS === fS;
+  });
   }
   if(!data.length){
     list.innerHTML='<div style="text-align:center;padding:40px;color:var(--grey-txt);">No hay inventarios para esta sucursal.</div>';

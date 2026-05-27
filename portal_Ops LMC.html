@@ -1777,7 +1777,7 @@ function invUpdateTotals(){
     var catId = p.cat.replace(/[^a-zA-Z0-9]/g,'_');
     if(!bycat[catId]) bycat[catId] = 0;
     var val = parseFloat(invConteo[p.code]) || 0;
-    var subtotal = val * (p.precio || 0);
+    var subtotal = val * (p.precioUnit || p.precio || 0);
     bycat[catId] += subtotal;
     totalCosto += subtotal;
     if(val > 0) totalLineas++;
@@ -2079,6 +2079,7 @@ function histRender(){
     data = data.filter(function(i){
     var iS = (i.sucursal||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
     var fS = (histFiltro||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+    console.log('histFiltro:', JSON.stringify(histFiltro), '| i.sucursal:', JSON.stringify(i.sucursal), '| match:', iS===fS);
     return iS === fS;
   });
   }

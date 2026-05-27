@@ -1657,7 +1657,7 @@ function iframePost(url, data, cb) {
 var invConteo={},invSugerencias=[];
 var invAutosaveTimer = null;
 var INV_BORRADOR_KEY = 'lmc_inv_borrador';
-var INV_SUCS={'Ávila Camacho':{correo:'lunamediacentro@gmail.com',gerente:'Luis Enrique Velazquez Hernandez'},'Avila Camacho':{correo:'lunamediacentro@gmail.com',gerente:'Luis Enrique Velazquez Hernandez'},'Paseo Jardines':{correo:'lunamediapaseojardines@gmail.com',gerente:'Ingrid Arely Martinez Diaz'},'Postrería':{correo:'postrerialunamediacafe@gmail.com',gerente:'Eduardo Hernandez Cancela'},'Postreria':{correo:'postrerialunamediacafe@gmail.com',gerente:'Eduardo Hernandez Cancela'}};
+var INV_SUCS={'Ávila Camacho':{correo:'lunamediacentro@gmail.com',gerente:'Luis Enrique Velazquez Hernandez'},'Avila Camacho':{correo:'lunamediacentro@gmail.com',gerente:'Luis Enrique Velazquez Hernandez'},'Paseo Jardines':{correo:'lunamediapaseojardines@gmail.com',gerente:'Ingrid Arely Martinez Diaz'},'Postrería':{correo:'postrerialunamediacafe@gmail.com',gerente:'Eduardo Hernandez Cancela'},'Postreria':{correo:'postrerialunamediacafe@gmail.com',gerente:'Eduardo Hernandez Cancela'},'CDP':{correo:'cdplunamediacafe@gmail.com',gerente:'Amilcar Antonio González Córdova'}};
 
 function invFill(){
   var s = document.getElementById('inv-suc').value;
@@ -2185,7 +2185,7 @@ function invReset(){invConteo={};if(invCorrTimer)clearInterval(invCorrTimer);inv
 
 // ══ EVALUACION ══
 var evFolioActual='',evProductos=[],evRecibidos={},evStarVal=0;
-var EV_SUCS={'Ávila Camacho':{correo:'lunamediacentro@gmail.com',gerente:'Luis Enrique Velazquez Hernandez'},'Avila Camacho':{correo:'lunamediacentro@gmail.com',gerente:'Luis Enrique Velazquez Hernandez'},'Paseo Jardines':{correo:'lunamediapaseojardines@gmail.com',gerente:'Ingrid Arely Martinez Diaz'},'Postrería':{correo:'postrerialunamediacafe@gmail.com',gerente:'Eduardo Hernandez Cancela'},'Postreria':{correo:'postrerialunamediacafe@gmail.com',gerente:'Eduardo Hernandez Cancela'}};
+var EV_SUCS={'Ávila Camacho':{correo:'lunamediacentro@gmail.com',gerente:'Luis Enrique Velazquez Hernandez'},'Avila Camacho':{correo:'lunamediacentro@gmail.com',gerente:'Luis Enrique Velazquez Hernandez'},'Paseo Jardines':{correo:'lunamediapaseojardines@gmail.com',gerente:'Ingrid Arely Martinez Diaz'},'Postrería':{correo:'postrerialunamediacafe@gmail.com',gerente:'Eduardo Hernandez Cancela'},'Postreria':{correo:'postrerialunamediacafe@gmail.com',gerente:'Eduardo Hernandez Cancela'},'CDP':{correo:'cdplunamediacafe@gmail.com',gerente:'Amilcar Antonio González Córdova'}};
 
 function evStepbar(cur){for(var i=1;i<=5;i++){var s=document.getElementById('ev-st'+i),d=document.getElementById('ev-sd'+i);if(!s||!d)continue;s.className='stp';if(i<cur){s.classList.add('done');d.textContent='V';}else if(i===cur){s.classList.add('active');d.textContent=i;}else d.textContent=i;}}
 
@@ -3207,12 +3207,18 @@ function concRender(rows){
       montoReal  += montoRe;
     }
 
-    h += '<tr style="background:' + (i%2===0?'#fff':'#f5f8fc') + ';border-top:1px solid var(--grey-lt);' + (esCancelada?'opacity:.5;':'') + '">';
+    var esTransRow = r.estado && r.estado.indexOf('TRANSFERENCIA') >= 0;
+    var transEmisora = r.estado === 'TRANSFERENCIA-EMISORA';
+    var transReceptora = r.estado === 'TRANSFERENCIA-RECEPTORA';
+    var rowBg = esCancelada ? '#f5f5f5' : esTransRow ? (transEmisora ? '#FEF5F5' : '#F0FAF5') : (i%2===0?'#fff':'#f5f8fc');
+    h += '<tr style="background:' + rowBg + ';border-top:1px solid var(--grey-lt);' + (esCancelada?'opacity:.5;':'') + '">';
     h += '<td style="padding:8px 12px;font-family:monospace;font-weight:700;color:var(--blue);white-space:nowrap;">' + (r.folio||'') + '</td>';
     h += '<td style="padding:8px 12px;white-space:nowrap;">' + (r.fecha||'') + '</td>';
     h += '<td style="padding:8px 12px;">' + (r.sucursal||'') + '</td>';
     h += '<td style="padding:8px 12px;white-space:nowrap;">' + (r.fechaEntrega||'') + '</td>';
-    h += '<td style="padding:8px 12px;font-weight:600;">' + (esCancelada ? '<span style="color:#6B7E93;">TOTAL ESTIMADO $0.00</span>' : fmtMoney(montoEst)) + '</td>';
+    var _montoColor = transEmisora ? '#D4504A' : transReceptora ? '#2E9E6B' : 'inherit';
+    var _montoSign  = transEmisora ? '−' : transReceptora ? '+' : '';
+    h += '<td style="padding:8px 12px;font-weight:700;color:' + _montoColor + '">' + (esCancelada ? '<span style="color:#6B7E93;">$0.00</span>' : (_montoSign + fmtMoney(Math.abs(montoEst)))) + '</td>';
     h += '<td style="padding:8px 12px;font-weight:600;color:#2E9E6B;">' + (esCancelada ? '—' : fmtMoney(montoRe)) + '</td>';
     h += '<td style="padding:8px 12px;font-weight:700;color:' + diffColor + ';">' + (esCancelada ? '—' : ((diff >= 0 ? '+' : '') + fmtMoney(Math.abs(diff)))) + '</td>';
     h += '<td style="padding:8px 12px;"><span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;background:' + estadoColor + '22;color:' + estadoColor + ';">' + (estadoLabel||r.estado||'') + '</span></td>';

@@ -284,6 +284,7 @@ textarea{resize:vertical;min-height:72px;line-height:1.6;}
     <div class="ntab active" id="ntab4" onclick="showMod(4)">&#128196; Historial Inventarios</div>
     <div class="ntab" id="ntab2" onclick="showMod(2)">&#128230; Inventario</div>
     <div class="ntab" id="ntab7" onclick="showMod(7)" style="display:none;">&#128196; Historial SDP</div>
+    <div class="ntab" id="ntab8" onclick="showMod(8)" style="display:none;">&#128202; Promedios</div>
     <div class="ntab" id="ntab1" onclick="showMod(1)">&#128722; Solicitud de Pedido</div>
     <div class="ntab" id="ntab3" onclick="showMod(3)">&#128203; Evaluacion de Entrega</div>
     <div class="ntab" id="ntab5" onclick="showMod(5)" style="display:none;">&#128179; Compras Conciliadas</div>
@@ -1609,6 +1610,7 @@ function showMod(n){
     if(n===4) histCargar();
     if(n===5) conciliacionCargar();
     if(n===7) histSdpCargar();
+  if(n===8) promCargar();
     espejoPublicar('Módulo '+n,'abierto',{});
     var btnTr=document.getElementById('btn-transferencias');
     if(btnTr) btnTr.style.display='block';
@@ -2635,14 +2637,18 @@ function aplicarRol(){
 
   var btnTrans = document.getElementById('btn-transferencias');
   if(btnTrans) btnTrans.style.display = 'block'; // visible for all roles
-  // Admin tiene acceso universal a todas las pestanas presentes y futuras
+  // Admin tiene acceso universal a todas las pestanas
+  var _mod8=document.getElementById('mod8'),_ntab8=document.getElementById('ntab8');
+  if(_mod8) _mod8.style.display=(rol==='admin')?'block':'none';
+  if(_ntab8) _ntab8.style.display=(rol==='admin')?'flex':'none';
   var tabsPermitidos = {
     'ntab4': ['admin','cedis','sucursal'],  // Historial
     'ntab2': ['admin','sucursal'],           // Inventario
     'ntab1': ['admin','cedis','sucursal'],   // Solicitud Pedido / Asignaciones
     'ntab3': ['admin','sucursal'],           // Evaluacion
     'ntab5': ['admin'],                      // Compras Conciliadas
-    'ntab7': ['admin','cedis','sucursal']     // Historial SDP
+    'ntab7': ['admin','cedis','sucursal'],     // Historial SDP
+    'ntab8': ['admin']                           // Promedios
   };
   Object.keys(tabsPermitidos).forEach(function(id){
     var el = document.getElementById(id);
@@ -3892,6 +3898,116 @@ function espejoRender(d) {
   }
   wrap.innerHTML = h;
 }
+
+// ══ MÓDULO 8: PROMEDIOS DE SOLICITUD ══
+function promCargar(){
+  var suc=document.getElementById('prom-suc').value;
+  var desde=document.getElementById('prom-desde').value;
+  var hasta=document.getElementById('prom-hasta').value;
+  var res=document.getElementById('prom-resultado');
+  var load=document.getElementById('prom-loading');
+  if(!desde||!hasta){alert('Selecciona un período de fechas.');return;}
+  res.innerHTML='';load.style.display='block';
+  var url=SCRIPT_URL+'?tipo=historial_sdp';
+  if(suc) url+='&sucursal='+encodeURIComponent(suc);
+  if(desde) url+='&desde='+encodeURIComponent(desde);
+  if(hasta) url+='&hasta='+encodeURIComponent(hasta);
+  fetch(url).then(function(r){return r.json();}).then(function(data){
+    load.style.display='none';
+    if(!data||!data.length){res.innerHTML='<div style="text-align:center;padding:40px;color:var(--grey-txt);">Sin datos para el período.</div>';return;}
+    var evaluadas=data.filter(function(r){return r.estado==='EVALUADA';});
+    if(!evaluadas.length){res.innerHTML='<div style="text-align:center;padding:40px;color:var(--grey-txt);">No hay pedidos evaluados en este período.</div>';return;}
+    promRender(evaluadas,desde,hasta);
+  }).catch(function(){load.style.display='none';res.innerHTML='<div style="color:#D4504A;text-align:center;padding:20px;">Error al cargar.</div>';});
+}
+
+function promRender(data,desde,hasta){
+  var productos={};
+  var diasPeriodo=Math.max(1,(new Date(hasta)-new Date(desde))/(1000*60*60*24));
+  var semanas=Math.max(1,diasPeriodo/7);
+  var meses=Math.max(1,diasPeriodo/30);
+  data.forEach(function(sdp){
+    if(!sdp.productos)return;
+    sdp.productos.split('\n').forEach(function(line){
+      var p=line.split('|');
+      if(p.length<5)return;
+      var code=p[0].trim(),nombre=p[1].trim(),pres=p[2]?p[2].trim():'';
+      var qty=parseFloat(String(p[4]||'0').replace('x',''))||0;
+      if(!code||qty===0)return;
+      if(!productos[code])productos[code]={nombre:nombre,pres:pres,qtys:[],sucursales:{}};
+      productos[code].qtys.push(qty);
+      productos[code].sucursales[sdp.sucursal]=(productos[code].sucursales[sdp.sucursal]||0)+qty;
+    });
+  });
+  var codes=Object.keys(productos).sort(function(a,b){
+    return productos[b].qtys.reduce(function(s,v){return s+v;},0)-productos[a].qtys.reduce(function(s,v){return s+v;},0);
+  });
+  if(!codes.length){document.getElementById('prom-resultado').innerHTML='<div style="text-align:center;padding:40px;color:var(--grey-txt);">Sin productos encontrados.</div>';return;}
+  var h='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+  h+='<thead><tr style="background:var(--blue-dkr);">';
+  ['#','Código','Producto','Presentación','Total','Prom/Semana','Prom/Mes','Mínimo','Máximo','Por Sucursal'].forEach(function(c){
+    h+='<th style="padding:8px 10px;color:rgba(255,255,255,.9);font-size:10px;white-space:nowrap;">'+c+'</th>';
+  });
+  h+='</tr></thead><tbody>';
+  codes.forEach(function(code,i){
+    var p=productos[code];
+    var total=p.qtys.reduce(function(s,v){return s+v;},0);
+    var min=Math.min.apply(null,p.qtys),max=Math.max.apply(null,p.qtys);
+    var sucStr=Object.keys(p.sucursales).map(function(s){
+      return '<span style="background:var(--blue-lt);color:var(--blue-dk);padding:1px 6px;border-radius:8px;font-size:9px;margin:1px;display:inline-block;">'+s+': '+p.sucursales[s].toFixed(1)+'</span>';
+    }).join('');
+    var bg=i%2===0?'#fff':'#F8FAFE';
+    h+='<tr style="background:'+bg+';border-top:1px solid var(--grey-lt);">';
+    h+='<td style="padding:7px 10px;color:var(--grey-txt);">'+(i+1)+'</td>';
+    h+='<td style="padding:7px 10px;font-family:monospace;font-size:11px;color:var(--blue);">'+code+'</td>';
+    h+='<td style="padding:7px 10px;font-weight:600;">'+p.nombre+'</td>';
+    h+='<td style="padding:7px 10px;font-size:11px;color:var(--grey-txt);">'+p.pres+'</td>';
+    h+='<td style="padding:7px 10px;font-weight:700;text-align:right;color:var(--blue-dk);">'+total.toFixed(2)+'</td>';
+    h+='<td style="padding:7px 10px;text-align:right;font-weight:600;">'+(total/semanas).toFixed(2)+'</td>';
+    h+='<td style="padding:7px 10px;text-align:right;font-weight:600;">'+(total/meses).toFixed(2)+'</td>';
+    h+='<td style="padding:7px 10px;text-align:right;color:#2E9E6B;font-weight:700;">'+min.toFixed(2)+'</td>';
+    h+='<td style="padding:7px 10px;text-align:right;color:#D4504A;font-weight:700;">'+max.toFixed(2)+'</td>';
+    h+='<td style="padding:7px 10px;">'+sucStr+'</td>';
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+  document.getElementById('prom-resultado').innerHTML=h;
+}
+
+function promDescargar(){
+  var res=document.getElementById('prom-resultado');
+  var suc=document.getElementById('prom-suc').value||'Todas';
+  var desde=document.getElementById('prom-desde').value||'';
+  var hasta=document.getElementById('prom-hasta').value||'';
+  if(!res||!res.innerHTML.trim()){alert('Primero analiza los datos.');return;}
+  var btn=document.getElementById('btn-prom-dl');
+  if(btn){btn.disabled=true;btn.textContent='⏳ Generando...';}
+  var container=document.createElement('div');
+  container.style.cssText='position:fixed;left:-9999px;top:0;width:1200px;background:#fff;padding:20px;font-family:Arial,sans-serif;font-size:10px;';
+  container.innerHTML='<h2 style="color:#1D4F73;margin-bottom:4px;">Luna Media Café — Promedios de Solicitud</h2>'+
+    '<div style="font-size:10px;color:#6B7E93;margin-bottom:12px;">Sucursal: <strong>'+suc+'</strong> | Período: <strong>'+desde+' — '+hasta+'</strong></div>'+
+    '<style>table{width:100%;border-collapse:collapse;}th{background:#1D4F73;color:white;padding:5px 8px;font-size:9px;}td{padding:4px 8px;border-bottom:1px solid #EEF2F7;font-size:10px;}tr:nth-child(even) td{background:#F8FAFE;}</style>'+
+    res.innerHTML;
+  document.body.appendChild(container);
+  html2canvas(container,{scale:2,useCORS:true,backgroundColor:'#ffffff'}).then(function(canvas){
+    var doc=new window.jspdf.jsPDF('l','mm','a4');
+    var imgW=297,pageH=210,srcY=0,page=0;
+    var imgH=canvas.height*imgW/canvas.width;
+    while(srcY<canvas.height){
+      var srcH=Math.min(canvas.height-srcY,Math.round(canvas.height*pageH/imgH));
+      var pc=document.createElement('canvas');
+      pc.width=canvas.width;pc.height=srcH;
+      pc.getContext('2d').drawImage(canvas,0,srcY,canvas.width,srcH,0,0,canvas.width,srcH);
+      if(page>0)doc.addPage();
+      doc.addImage(pc.toDataURL('image/jpeg',0.95),'JPEG',0,0,imgW,srcH*imgW/canvas.width);
+      srcY+=srcH;page++;
+    }
+    doc.save('Promedios_'+desde+'_'+hasta+'.pdf');
+    document.body.removeChild(container);
+    if(btn){btn.disabled=false;btn.textContent='⬇️ PDF';}
+  }).catch(function(e){console.error(e);document.body.removeChild(container);if(btn){btn.disabled=false;btn.textContent='⬇️ PDF';}});
+}
+
 </script>
 
 <!-- MOD4: HISTORIAL INVENTARIOS -->
@@ -4070,6 +4186,43 @@ function espejoRender(d) {
       <button onclick="histSdpCargar()" style="background:var(--blue);color:#fff;border:none;border-radius:9px;padding:10px 18px;font-weight:700;cursor:pointer;">🔍 Buscar</button>
     </div>
     <div id="hsdp-lista"><div style="text-align:center;padding:30px;color:var(--grey-txt);">Cargando...</div></div>
+  </div>
+</div>
+</div>
+
+
+<!-- MOD8: PROMEDIOS DE SOLICITUD -->
+<div class="module" id="mod8">
+<div class="wrap">
+  <div class="card">
+    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--blue);margin-bottom:4px;">Análisis</p>
+    <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:16px;">Promedios de Solicitud por Insumo</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;margin-bottom:14px;">
+      <div class="field">
+        <label>Sucursal</label>
+        <div class="sel-wrap"><select id="prom-suc">
+          <option value="">Todas</option>
+          <option value="ÁVILA CAMACHO">Ávila Camacho</option>
+          <option value="PASEO JARDINES">Paseo Jardines</option>
+          <option value="POSTRERÍA">Postrería</option>
+          <option value="CDP">Calidad y Desarrollo</option>
+        </select></div>
+      </div>
+      <div class="field">
+        <label>Desde</label>
+        <input type="date" id="prom-desde">
+      </div>
+      <div class="field">
+        <label>Hasta</label>
+        <input type="date" id="prom-hasta">
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="promCargar()" style="background:var(--blue);color:#fff;border:none;border-radius:9px;padding:10px 18px;font-weight:700;cursor:pointer;">🔍 Analizar</button>
+        <button onclick="promDescargar()" id="btn-prom-dl" style="background:#2E9E6B;color:#fff;border:none;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer;">⬇️ PDF</button>
+      </div>
+    </div>
+    <div id="prom-loading" style="display:none;text-align:center;padding:30px;color:var(--grey-txt);">Analizando datos...</div>
+    <div id="prom-resultado"></div>
   </div>
 </div>
 </div>

@@ -2594,7 +2594,8 @@ var USUARIOS = {
   'cdplunamediacafe@gmail.com':     {pass:'Cdpantonio12',   rol:'sucursal', sucursal:'CDP',            nombre:'CDP - Calidad y Desarrollo'},
   'lunamediacafedo@gmail.com':      {pass:'DO16mayo2025',   rol:'admin',    sucursal:'',               nombre:'Administrador'},
   'ceo@lunamedicafe.com':           {pass:'Arnold2',        rol:'admin',    sucursal:'',               nombre:'CEO'},
-  'ceo@lunamediacafe.com':          {pass:'Arnold2',        rol:'admin',    sucursal:'',               nombre:'CEO'}
+  'ceo@lunamediacafe.com':          {pass:'Arnold2',        rol:'admin',    sucursal:'',               nombre:'CEO'},
+  'administracionlunamediacafe@gmail.com': {pass:'Admin.LMC2025',  rol:'administracion', sucursal:'', nombre:'Administración LMC'}
 };
 
 var sesionActual = null;
@@ -2649,8 +2650,8 @@ function aplicarRol(){
     'ntab1': ['admin','cedis','sucursal'],   // Solicitud Pedido / Asignaciones
     'ntab3': ['admin','sucursal'],           // Evaluacion
     'ntab5': ['admin'],                      // Compras Conciliadas
-    'ntab7': ['admin','cedis','sucursal'],     // Historial SDP
-    'ntab8': ['admin']                           // Promedios
+    'ntab7': ['admin','cedis','sucursal','administracion'],     // Historial SDP
+    'ntab8': ['admin','administracion']           // Promedios
   };
   Object.keys(tabsPermitidos).forEach(function(id){
     var el = document.getElementById(id);
@@ -2665,6 +2666,19 @@ function aplicarRol(){
   });
 
   // Auto-fill sucursal in SDP and INV if sucursal role
+  if(rol === 'administracion'){
+    // Solo acceso a: Compras Conciliadas, Historial Inventarios, Historial SDP, Promedios
+    ['ntab1','ntab2','ntab3','ntab4'].forEach(function(t){
+      var el=document.getElementById(t); if(el)el.style.display='none';
+    });
+    ['ntab5','ntab6','ntab7','ntab8'].forEach(function(t){
+      var el=document.getElementById(t); if(el)el.style.display='flex';
+    });
+    var _m8=document.getElementById('mod8'),_n8=document.getElementById('ntab8');
+    if(_m8)_m8.style.display='block';
+    if(_n8)_n8.style.display='flex';
+    showMod(5);
+  }
   if(rol === 'sucursal'){
     var suc = sesionActual.sucursal;
     var sdpSel = document.getElementById('sucursal');

@@ -232,7 +232,20 @@ textarea{resize:vertical;min-height:72px;line-height:1.6;}
 .ev-bhdr span{font-family:"Bebas Neue",sans-serif;color:#fff;font-size:15px;letter-spacing:.08em;}
 
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js">
+function generarReporte(){
+  var btn = document.getElementById('btn-reporte');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Generando...'; }
+  iframePost(SCRIPT_URL, {tipo:'reporte_ejecutivo'}, function(d){
+    if(btn){ btn.disabled=false; btn.textContent='📊 Reporte Ejecutivo'; }
+    if(d && d.url){
+      window.open(d.url, '_blank');
+    } else {
+      alert('Error: ' + (d ? (d.msg||JSON.stringify(d)) : 'sin respuesta'));
+    }
+  });
+}
+</script>
 </head>
 <body>
 
@@ -292,6 +305,7 @@ textarea{resize:vertical;min-height:72px;line-height:1.6;}
     <div class="ntab" id="ntab3" onclick="showMod(3)">&#128203; Evaluacion de Entrega</div>
     <div class="ntab" id="ntab5" onclick="showMod(5)" style="display:none;">&#128179; Compras Conciliadas</div>
     <button id="btn-transferencias" onclick="abrirTransferencias()" style="display:block;background:#E8F7F1;color:#2E9E6B;border:1px solid rgba(46,158,107,.3);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;margin:auto 0 auto 8px;">🔄 Transferencias</button>
+    <button id="btn-reporte" onclick="generarReporte()" style="display:none;background:#1D4F73;color:#fff;border:none;border-radius:10px;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer;margin-left:8px;">📊 Reporte Ejecutivo</button>
     v>
 </div>
 
@@ -2644,6 +2658,8 @@ function aplicarRol(){
   var _mod8=document.getElementById('mod8'),_ntab8=document.getElementById('ntab8');
   if(_mod8) _mod8.style.display=(rol==='admin')?'block':'none';
   if(_ntab8) _ntab8.style.display=(rol==='admin')?'flex':'none';
+  var _btnRep=document.getElementById('btn-reporte');
+  if(_btnRep) _btnRep.style.display=(rol==='admin')?'inline-block':'none';
   var tabsPermitidos = {
     'ntab4': ['admin','cedis','sucursal'],  // Historial
     'ntab2': ['admin','sucursal'],           // Inventario

@@ -3679,6 +3679,44 @@ function generarReporte(){
   });
 }
 
+
+// ══ SESIÓN ══
+function sesionVerificar(email, cbEspejo, cbNormal){
+  fetch(SCRIPT_URL + '?tipo=sesion_check&email=' + encodeURIComponent(email))
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d && d.activa && d.email === email){
+        cbEspejo();
+      } else {
+        cbNormal();
+      }
+    })
+    .catch(function(){ cbNormal(); });
+}
+
+function sesionIniciar(email){
+  iframePost(SCRIPT_URL, {tipo:'sesion_ping', email:email, accion:'iniciar'}, function(){});
+  sesionPingInterval = setInterval(function(){
+    iframePost(SCRIPT_URL, {tipo:'sesion_ping', email:email, accion:'ping'}, function(){});
+  }, 60000);
+}
+
+function sesionCerrar(){
+  if(sesionActual && sesionActual.email){
+    iframePost(SCRIPT_URL, {tipo:'sesion_cerrar', email:sesionActual.email}, function(){});
+  }
+  if(sesionPingInterval) clearInterval(sesionPingInterval);
+  sesionActual = null;
+  document.getElementById('app-root').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+}
+
+function espejoIniciar(){
+  // Modo espejo: solo visualizar, sin modificar sesión
+  Logger && Logger.log && Logger.log('Modo espejo iniciado');
+}
+
+var sesionPingInterval = null;
 </script>
 </body>
 </html>

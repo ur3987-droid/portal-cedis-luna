@@ -287,6 +287,7 @@ textarea{resize:vertical;min-height:72px;line-height:1.6;}
     <div class="ntab" id="ntab2" onclick="showMod(2)">&#128230; Inventario</div>
     <div class="ntab" id="ntab7" onclick="showMod(7)" style="display:none;">&#128196; Historial SDP</div>
     <div class="ntab" id="ntab8" onclick="showMod(8)" style="display:none;">&#128202; Promedios</div>
+    <div class="ntab" id="ntab9" onclick="showMod(9)" style="display:none;">&#128666; Desempeño CEDIS</div>
     <div class="ntab" id="ntab1" onclick="showMod(1)">&#128722; Solicitud de Pedido</div>
     <div class="ntab" id="ntab3" onclick="showMod(3)">&#128203; Evaluacion de Entrega</div>
     <div class="ntab" id="ntab5" onclick="showMod(5)" style="display:none;">&#128179; Compras Conciliadas</div>
@@ -1613,6 +1614,7 @@ function showMod(n){
     if(n===5) conciliacionCargar();
     if(n===7) histSdpCargar();
   if(n===8) promCargar();
+  if(n===9) cedCargar();
     espejoPublicar('Módulo '+n,'abierto',{});
     var btnTr=document.getElementById('btn-transferencias');
     if(btnTr) btnTr.style.display='block';
@@ -3492,21 +3494,15 @@ function verPdfSDP(btn){
 
 function generarReporte(){
   var btn = document.getElementById('btn-reporte');
-  if(btn){ btn.disabled=true; btn.textContent='⏳ Generando...'; }
-  fetch(SCRIPT_URL + '?tipo=reporte_ejecutivo')
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      if(d && d.url){
-        window.open(d.url, '_blank');
-        alert('✅ Reporte generado exitosamente. Se abrirá en una nueva pestaña.');
-      } else {
-        alert('Error al generar reporte: ' + (d ? d.msg : 'sin respuesta'));
-      }
-    })
-    .catch(function(err){ alert('Error: ' + err); })
-    .finally(function(){
-      if(btn){ btn.disabled=false; btn.textContent='📊 Reporte Ejecutivo'; }
-    });
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Generando PDF...'; }
+  iframePost(SCRIPT_URL, {tipo:'reporte_ejecutivo'}, function(d){
+    if(btn){ btn.disabled=false; btn.textContent='📊 Reporte Ejecutivo'; }
+    if(d && d.url){
+      window.open(d.url, '_blank');
+    } else {
+      alert('Error al generar reporte: ' + (d ? (d.msg||JSON.stringify(d)) : 'sin respuesta'));
+    }
+  });
 }
 
 function concDescarga(){
@@ -4024,6 +4020,122 @@ function promDescargar(){
   }).catch(function(e){console.error(e);document.body.removeChild(container);if(btn){btn.disabled=false;btn.textContent='⬇️ PDF';}});
 }
 
+
+// ══ MÓDULO 9: DESEMPEÑO CEDIS ══
+function cedCargar(){
+  var desde = document.getElementById('ced-desde').value;
+  var hasta = document.getElementById('ced-hasta').value;
+  var res   = document.getElementById('ced-resultado');
+  var load  = document.getElementById('ced-loading');
+  if(!desde||!hasta){alert('Selecciona un período de fechas.');return;}
+  res.innerHTML=''; load.style.display='block';
+  var url = SCRIPT_URL+'?tipo=cedis_desempeno&desde='+encodeURIComponent(desde)+'&hasta='+encodeURIComponent(hasta);
+  fetch(url).then(function(r){return r.json();}).then(function(d){
+    load.style.display='none';
+    if(!d||!d.totalSDP){res.innerHTML='<div style="text-align:center;padding:40px;color:var(--grey-txt);">Sin datos para el período.</div>';return;}
+    cedRender(d, desde, hasta);
+  }).catch(function(){load.style.display='none';res.innerHTML='<div style="color:#D4504A;text-align:center;padding:20px;">Error al cargar.</div>';});
+}
+
+function cedRender(d, desde, hasta){
+  var checkColor = parseFloat(d.pctCheck)>=90?'#2E9E6B':parseFloat(d.pctCheck)>=70?'#E07B2A':'#D4504A';
+  var ventColor  = parseFloat(d.pctVentana)>=80?'#2E9E6B':parseFloat(d.pctVentana)>=60?'#E07B2A':'#D4504A';
+  var promColor  = parseFloat(d.promMins)<=30?'#2E9E6B':parseFloat(d.promMins)<=50?'#E07B2A':'#D4504A';
+
+  var h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">';
+  h += kpiCard(d.totalSDP,'Total Entregas','var(--blue-dk)');
+  h += kpiCard(d.conCheck + ' / ' + d.totalSDP,'Con Check QR','var(--blue-dk)');
+  h += kpiCard(d.pctCheck+'%','Cumplimiento Check',checkColor);
+  h += kpiCard(d.sinCheck,'Sin Check (incumplimiento)','#D4504A');
+  h += '</div>';
+
+  h += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">';
+  h += kpiCard(d.pctVentana+'%','En Ventana 9–13h',ventColor);
+  h += kpiCard(d.fueraVentana,'Fuera de Ventana','#E07B2A');
+  h += kpiCard(d.promMins+' min','Tiempo Prom. Entrega',promColor);
+  h += '</div>';
+
+  // Alerts
+  if(parseFloat(d.pctCheck)<90){
+    h += '<div style="background:#FEF0EF;border-left:4px solid #D4504A;padding:10px 14px;border-radius:0 8px 8px 0;margin-bottom:12px;font-size:13px;">';
+    h += '⚠️ <strong>Incumplimiento de check QR:</strong> '+d.sinCheck+' entregas sin registro. El repartidor no está escaneando en todas las sucursales.</div>';
+  }
+  if(parseFloat(d.pctVentana)<80){
+    h += '<div style="background:#FEF5EC;border-left:4px solid #E07B2A;padding:10px 14px;border-radius:0 8px 8px 0;margin-bottom:12px;font-size:13px;">';
+    h += '⚠️ <strong>Entregas fuera de ventana:</strong> '+d.fueraVentana+' entregas realizadas fuera del horario 9:00–13:00h.</div>';
+  }
+
+  // Detail table
+  h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+  h += '<thead><tr style="background:var(--blue-dkr);">';
+  ['Folio','Sucursal','Fecha','Hora Entrada','Hora Salida','Ventana','Tiempo','Check'].forEach(function(c){
+    h += '<th style="padding:7px 10px;color:rgba(255,255,255,.9);font-size:10px;white-space:nowrap;">'+c+'</th>';
+  });
+  h += '</tr></thead><tbody>';
+
+  d.detalle.forEach(function(r,i){
+    var bg = !r.check ? '#FEF5F5' : (i%2===0?'#fff':'#F8FAFE');
+    var ventBadge = r.check ? (r.enVentana
+      ? '<span style="background:#E8F7F1;color:#2E9E6B;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">✅ Dentro</span>'
+      : '<span style="background:#FEF5EC;color:#E07B2A;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">⚠️ Fuera</span>')
+      : '—';
+    var checkBadge = r.check
+      ? '<span style="color:#2E9E6B;font-weight:700;">✅</span>'
+      : '<span style="color:#D4504A;font-weight:700;">❌ Sin check</span>';
+    h += '<tr style="background:'+bg+';border-top:1px solid var(--grey-lt);">';
+    h += '<td style="padding:6px 10px;font-family:monospace;font-size:11px;color:var(--blue);">'+r.folio+'</td>';
+    h += '<td style="padding:6px 10px;">'+r.sucursal+'</td>';
+    h += '<td style="padding:6px 10px;">'+r.fecha+'</td>';
+    h += '<td style="padding:6px 10px;font-weight:600;">'+r.horaEntrada+'</td>';
+    h += '<td style="padding:6px 10px;font-weight:600;">'+r.horaSalida+'</td>';
+    h += '<td style="padding:6px 10px;">'+ventBadge+'</td>';
+    h += '<td style="padding:6px 10px;text-align:right;">'+(r.minutos>0?r.minutos+' min':'—')+'</td>';
+    h += '<td style="padding:6px 10px;">'+checkBadge+'</td>';
+    h += '</tr>';
+  });
+  h += '</tbody></table></div>';
+  document.getElementById('ced-resultado').innerHTML = h;
+}
+
+function kpiCard(val, lbl, color){
+  return '<div style="background:#F0F4F8;border-radius:12px;padding:14px;text-align:center;">'+
+    '<div style="font-size:22px;font-weight:700;color:'+color+';">'+val+'</div>'+
+    '<div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--grey-txt);margin-top:2px;">'+lbl+'</div>'+
+    '</div>';
+}
+
+function cedDescargar(){
+  var res = document.getElementById('ced-resultado');
+  var desde = document.getElementById('ced-desde').value||'';
+  var hasta = document.getElementById('ced-hasta').value||'';
+  if(!res||!res.innerHTML.trim()){alert('Primero analiza los datos.');return;}
+  var btn = document.getElementById('btn-ced-dl');
+  if(btn){btn.disabled=true;btn.textContent='⏳ Generando...';}
+  var container = document.createElement('div');
+  container.style.cssText='position:absolute;left:-9999px;top:0;width:1200px;background:#fff;padding:20px;font-family:Arial,sans-serif;font-size:11px;';
+  container.innerHTML='<h2 style="color:#1D4F73;margin-bottom:4px;">Luna Media Café — Desempeño CEDIS</h2>'+
+    '<div style="font-size:11px;color:#6B7E93;margin-bottom:12px;">Período: <strong>'+desde+' — '+hasta+'</strong> | Ventana de entrega: 9:00–13:00h</div>'+
+    '<style>table{width:100%;border-collapse:collapse;}th{background:#1D4F73;color:white;padding:5px 8px;font-size:9px;}td{padding:4px 8px;border-bottom:1px solid #EEF2F7;font-size:10px;}tr:nth-child(even) td{background:#F8FAFE;}</style>'+
+    res.innerHTML;
+  document.body.appendChild(container);
+  html2canvas(container,{scale:2,useCORS:true,backgroundColor:'#ffffff'}).then(function(canvas){
+    var doc=new window.jspdf.jsPDF('l','mm','a4');
+    var imgW=297,pageH=210,srcY=0,page=0;
+    var imgH=canvas.height*imgW/canvas.width;
+    while(srcY<canvas.height){
+      var srcH=Math.min(canvas.height-srcY,Math.round(canvas.height*pageH/imgH));
+      var pc=document.createElement('canvas');pc.width=canvas.width;pc.height=srcH;
+      pc.getContext('2d').drawImage(canvas,0,srcY,canvas.width,srcH,0,0,canvas.width,srcH);
+      if(page>0)doc.addPage();
+      doc.addImage(pc.toDataURL('image/jpeg',0.95),'JPEG',0,0,imgW,srcH*imgW/canvas.width);
+      srcY+=srcH;page++;
+    }
+    doc.save('Desempeno_CEDIS_'+desde+'_'+hasta+'.pdf');
+    document.body.removeChild(container);
+    if(btn){btn.disabled=false;btn.textContent='⬇️ PDF';}
+  }).catch(function(e){console.error(e);document.body.removeChild(container);if(btn){btn.disabled=false;btn.textContent='⬇️ PDF';}});
+}
+
 </script>
 
 <!-- MOD4: HISTORIAL INVENTARIOS -->
@@ -4239,6 +4351,27 @@ function promDescargar(){
     </div>
     <div id="prom-loading" style="display:none;text-align:center;padding:30px;color:var(--grey-txt);">Analizando datos...</div>
     <div id="prom-resultado"></div>
+  </div>
+</div>
+</div>
+
+
+<!-- MOD9: DESEMPEÑO CEDIS -->
+<div class="module" id="mod9">
+<div class="wrap">
+  <div class="card">
+    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--blue);margin-bottom:4px;">CEDIS</p>
+    <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:16px;">Desempeño de Entregas CEDIS</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;margin-bottom:14px;">
+      <div class="field"><label>Desde</label><input type="date" id="ced-desde"></div>
+      <div class="field"><label>Hasta</label><input type="date" id="ced-hasta"></div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="cedCargar()" style="background:var(--blue);color:#fff;border:none;border-radius:9px;padding:10px 18px;font-weight:700;cursor:pointer;">🔍 Analizar</button>
+        <button onclick="cedDescargar()" id="btn-ced-dl" style="background:#2E9E6B;color:#fff;border:none;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer;">⬇️ PDF</button>
+      </div>
+    </div>
+    <div id="ced-loading" style="display:none;text-align:center;padding:30px;color:var(--grey-txt);">Analizando...</div>
+    <div id="ced-resultado"></div>
   </div>
 </div>
 </div>

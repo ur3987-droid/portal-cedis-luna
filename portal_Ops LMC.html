@@ -3508,13 +3508,173 @@ function verPdfSDP(btn){
 
 
 function concDescarga(){
-  // Build printable HTML from current concRender data
-  var tabla = document.getElementById('conc-tabla');
-  if(!tabla){ alert('No hay datos para descargar.'); return; }
-  var suc   = document.getElementById('conc-suc').value || 'Todas las sucursales';
+  var btn2 = document.querySelector('[onclick="concDescarga()"]');
+  if(btn2){btn2.disabled=true; btn2.textContent='⏳ Generando...';}
+  var suc   = document.getElementById('conc-suc').value || 'Todas';
   var desde = document.getElementById('conc-desde').value || '';
   var hasta = document.getElementById('conc-hasta').value || '';
-  var estado= document.getElementById('conc-estado-filtro').value || 'Todos';
-  var periodo = (desde || hasta) ? (desde + (hasta?' — '+hasta:'')) : 'Periodo completo';
+  var periodo = (desde||hasta) ? (desde + (hasta?' — '+hasta:'')) : 'Periodo completo';
+  var tableEl = document.querySelector('#conc-tabla table');
+  var tableHTML = tableEl ? tableEl.outerHTML : '<p>Sin datos</p>';
+  var tp = document.getElementById('conc-total-ped');
+  var tm = document.getElementById('conc-monto-total');
+  var tr2= document.getElementById('conc-monto-real');
+  var td = document.getElementById('conc-diferencia');
+  var container = document.createElement('div');
+  container.style.cssText = 'position:absolute;left:-9999px;top:0;width:1100px;background:#fff;padding:24px;font-family:Arial,sans-serif;font-size:11px;';
+  container.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #1D4F73;padding-bottom:10px;margin-bottom:14px;">' +
+      '<div><div style="font-size:22px;font-weight:700;color:#1D4F73;">Luna Media Café</div>' +
+      '<div style="font-size:11px;color:#6B7E93;text-transform:uppercase;letter-spacing:1px;">Compras Conciliadas</div></div>' +
+      '<div style="text-align:right;font-size:11px;color:#6B7E93;">Sucursal: <strong style="color:#182533;">' + suc + '</strong><br>Período: <strong style="color:#182533;">' + periodo + '</strong><br>' + new Date().toLocaleString('es-MX',{hour12:false}) + '</div>' +
+    '</div>' +
+    '<style>table{width:100%;border-collapse:collapse;}th{background:#1D4F73;color:white;padding:5px 8px;font-size:9px;text-align:left;}td{padding:4px 8px;border-bottom:1px solid #EEF2F7;font-size:10px;}tr:nth-child(even) td{background:#F8FAFE;}</style>' +
+    tableHTML +
+    '<div style="display:flex;gap:24px;margin-top:14px;background:#EBF4FB;padding:10px 14px;border-radius:8px;">' +
+      '<div style="text-align:center;"><div style="font-size:16px;font-weight:700;color:#1D4F73;">' + (tp?tp.textContent:'') + '</div><div style="font-size:9px;color:#6B7E93;text-transform:uppercase;">Pedidos</div></div>' +
+      '<div style="text-align:center;"><div style="font-size:16px;font-weight:700;color:#1D4F73;">' + (tm?tm.textContent:'') + '</div><div style="font-size:9px;color:#6B7E93;text-transform:uppercase;">Total Estimado</div></div>' +
+      '<div style="text-align:center;"><div style="font-size:16px;font-weight:700;color:#2E9E6B;">' + (tr2?tr2.textContent:'') + '</div><div style="font-size:9px;color:#6B7E93;text-transform:uppercase;">Total Real</div></div>' +
+      '<div style="text-align:center;"><div style="font-size:16px;font-weight:700;">' + (td?td.textContent:'') + '</div><div style="font-size:9px;color:#6B7E93;text-transform:uppercase;">Diferencia</div></div>' +
+    '</div>' +
+    '<div style="margin-top:12px;text-align:center;font-size:9px;color:#9BADBF;">Luna Media Café · Portal OpsLMC · ' + new Date().toLocaleString('es-MX',{hour12:false}) + '</div>';
+  document.body.appendChild(container);
+  html2canvas(container,{scale:2,useCORS:true,backgroundColor:'#ffffff'}).then(function(canvas){
+    var doc=new window.jspdf.jsPDF('l','mm','a4');
+    var imgW=297,pageH=210,srcY=0,page=0;
+    var imgH=canvas.height*imgW/canvas.width;
+    while(srcY<canvas.height){
+      var srcH=Math.min(canvas.height-srcY,Math.round(canvas.height*pageH/imgH));
+      var pc=document.createElement('canvas');
+      pc.width=canvas.width;pc.height=srcH;
+      pc.getContext('2d').drawImage(canvas,0,srcY,canvas.width,srcH,0,0,canvas.width,srcH);
+      if(page>0)doc.addPage();
+      doc.addImage(pc.toDataURL('image/jpeg',0.95),'JPEG',0,0,imgW,srcH*imgW/canvas.width);
+      srcY+=srcH;page++;
+    }
+    doc.save('Compras_Conciliadas_'+new Date().toISOString().split('T')[0]+'.pdf');
+    document.body.removeChild(container);
+    if(btn2){btn2.disabled=false;btn2.textContent='⬇️ Descargar';}
+  }).catch(function(e){console.error(e);document.body.removeChild(container);if(btn2){btn2.disabled=false;btn2.textContent='⬇️ Descargar';}});
+}
 
-  var html = '
+function generarReporte(){
+  var btn = document.getElementById('btn-reporte');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Generando...'; }
+  iframePost(SCRIPT_URL, {tipo:'reporte_ejecutivo'}, function(d){
+    if(btn){ btn.disabled=false; btn.textContent='📊 Reporte Ejecutivo'; }
+    if(d && d.url){ window.open(d.url, '_blank'); }
+    else { alert('Error: ' + (d ? (d.msg||JSON.stringify(d)) : 'sin respuesta')); }
+  });
+}
+
+// ══ MÓDULO 8: PROMEDIOS DE SOLICITUD ══
+function promCargar(){
+  var suc=document.getElementById('prom-suc').value;
+  var desde=document.getElementById('prom-desde').value;
+  var hasta=document.getElementById('prom-hasta').value;
+  var res=document.getElementById('prom-resultado');
+  var load=document.getElementById('prom-loading');
+  if(!desde||!hasta){alert('Selecciona un período de fechas.');return;}
+  res.innerHTML='';load.style.display='block';
+  var url=SCRIPT_URL+'?tipo=historial_sdp';
+  if(suc) url+='&sucursal='+encodeURIComponent(suc);
+  if(desde) url+='&desde='+encodeURIComponent(desde);
+  if(hasta) url+='&hasta='+encodeURIComponent(hasta);
+  fetch(url).then(function(r){return r.json();}).then(function(data){
+    load.style.display='none';
+    if(!data||!data.length){res.innerHTML='<div style="text-align:center;padding:40px;color:var(--grey-txt);">Sin datos para el período.</div>';return;}
+    var evaluadas=data.filter(function(r){return r.estado==='EVALUADA';});
+    if(!evaluadas.length){res.innerHTML='<div style="text-align:center;padding:40px;color:var(--grey-txt);">No hay pedidos evaluados en este período.</div>';return;}
+    promRender(evaluadas,desde,hasta);
+  }).catch(function(){load.style.display='none';res.innerHTML='<div style="color:#D4504A;text-align:center;padding:20px;">Error al cargar.</div>';});
+}
+
+function promRender(data,desde,hasta){
+  var productos={};
+  var diasPeriodo=Math.max(1,(new Date(hasta)-new Date(desde))/(1000*60*60*24));
+  var semanas=Math.max(1,diasPeriodo/7);
+  var meses=Math.max(1,diasPeriodo/30);
+  data.forEach(function(sdp){
+    if(!sdp.productos)return;
+    sdp.productos.split('\n').forEach(function(line){
+      var p=line.split('|');
+      if(p.length<5)return;
+      var code=p[0].trim(),nombre=p[1].trim(),pres=p[2]?p[2].trim():'';
+      var qty=parseFloat(String(p[4]||'0').replace('x',''))||0;
+      if(!code||qty===0)return;
+      if(!productos[code])productos[code]={nombre:nombre,pres:pres,qtys:[],sucursales:{}};
+      productos[code].qtys.push(qty);
+      productos[code].sucursales[sdp.sucursal]=(productos[code].sucursales[sdp.sucursal]||0)+qty;
+    });
+  });
+  var codes=Object.keys(productos).sort(function(a,b){
+    return productos[b].qtys.reduce(function(s,v){return s+v;},0)-productos[a].qtys.reduce(function(s,v){return s+v;},0);
+  });
+  if(!codes.length){document.getElementById('prom-resultado').innerHTML='<div style="text-align:center;padding:40px;color:var(--grey-txt);">Sin productos encontrados.</div>';return;}
+  var h='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+  h+='<thead><tr style="background:var(--blue-dkr);">';
+  ['#','Código','Producto','Presentación','Total','Prom/Semana','Prom/Mes','Mínimo','Máximo','Por Sucursal'].forEach(function(c){
+    h+='<th style="padding:8px 10px;color:rgba(255,255,255,.9);font-size:10px;white-space:nowrap;">'+c+'</th>';
+  });
+  h+='</tr></thead><tbody>';
+  codes.forEach(function(code,i){
+    var p=productos[code];
+    var total=p.qtys.reduce(function(s,v){return s+v;},0);
+    var min=Math.min.apply(null,p.qtys),max=Math.max.apply(null,p.qtys);
+    var sucStr=Object.keys(p.sucursales).map(function(s){
+      return '<span style="background:var(--blue-lt);color:var(--blue-dk);padding:1px 6px;border-radius:8px;font-size:9px;margin:1px;display:inline-block;">'+s+': '+p.sucursales[s].toFixed(1)+'</span>';
+    }).join('');
+    var bg=i%2===0?'#fff':'#F8FAFE';
+    h+='<tr style="background:'+bg+';border-top:1px solid var(--grey-lt);">';
+    h+='<td style="padding:7px 10px;color:var(--grey-txt);">'+(i+1)+'</td>';
+    h+='<td style="padding:7px 10px;font-family:monospace;font-size:11px;color:var(--blue);">'+code+'</td>';
+    h+='<td style="padding:7px 10px;font-weight:600;">'+p.nombre+'</td>';
+    h+='<td style="padding:7px 10px;font-size:11px;color:var(--grey-txt);">'+p.pres+'</td>';
+    h+='<td style="padding:7px 10px;font-weight:700;text-align:right;color:var(--blue-dk);">'+total.toFixed(2)+'</td>';
+    h+='<td style="padding:7px 10px;text-align:right;font-weight:600;">'+(total/semanas).toFixed(2)+'</td>';
+    h+='<td style="padding:7px 10px;text-align:right;font-weight:600;">'+(total/meses).toFixed(2)+'</td>';
+    h+='<td style="padding:7px 10px;text-align:right;color:#2E9E6B;font-weight:700;">'+min.toFixed(2)+'</td>';
+    h+='<td style="padding:7px 10px;text-align:right;color:#D4504A;font-weight:700;">'+max.toFixed(2)+'</td>';
+    h+='<td style="padding:7px 10px;">'+sucStr+'</td>';
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+  document.getElementById('prom-resultado').innerHTML=h;
+}
+
+function promDescargar(){
+  var res=document.getElementById('prom-resultado');
+  var suc=document.getElementById('prom-suc').value||'Todas';
+  var desde=document.getElementById('prom-desde').value||'';
+  var hasta=document.getElementById('prom-hasta').value||'';
+  if(!res||!res.innerHTML.trim()){alert('Primero analiza los datos.');return;}
+  var btn=document.getElementById('btn-prom-dl');
+  if(btn){btn.disabled=true;btn.textContent='⏳ Generando...';}
+  var container=document.createElement('div');
+  container.style.cssText='position:absolute;left:-9999px;top:0;width:1200px;background:#fff;padding:20px;font-family:Arial,sans-serif;font-size:10px;';
+  container.innerHTML='<h2 style="color:#1D4F73;margin-bottom:4px;">Luna Media Café — Promedios de Solicitud</h2>'+
+    '<div style="font-size:10px;color:#6B7E93;margin-bottom:12px;">Sucursal: <strong>'+suc+'</strong> | Período: <strong>'+desde+' — '+hasta+'</strong></div>'+
+    '<style>table{width:100%;border-collapse:collapse;}th{background:#1D4F73;color:white;padding:5px 8px;font-size:9px;}td{padding:4px 8px;border-bottom:1px solid #EEF2F7;font-size:10px;}tr:nth-child(even) td{background:#F8FAFE;}</style>'+
+    res.innerHTML;
+  document.body.appendChild(container);
+  html2canvas(container,{scale:2,useCORS:true,backgroundColor:'#ffffff'}).then(function(canvas){
+    var doc=new window.jspdf.jsPDF('l','mm','a4');
+    var imgW=297,pageH=210,srcY=0,page=0;
+    var imgH=canvas.height*imgW/canvas.width;
+    while(srcY<canvas.height){
+      var srcH=Math.min(canvas.height-srcY,Math.round(canvas.height*pageH/imgH));
+      var pc=document.createElement('canvas');
+      pc.width=canvas.width;pc.height=srcH;
+      pc.getContext('2d').drawImage(canvas,0,srcY,canvas.width,srcH,0,0,canvas.width,srcH);
+      if(page>0)doc.addPage();
+      doc.addImage(pc.toDataURL('image/jpeg',0.95),'JPEG',0,0,imgW,srcH*imgW/canvas.width);
+      srcY+=srcH;page++;
+    }
+    doc.save('Promedios_'+desde+'_'+hasta+'.pdf');
+    document.body.removeChild(container);
+    if(btn){btn.disabled=false;btn.textContent='⬇️ PDF';}
+  }).catch(function(e){console.error(e);document.body.removeChild(container);if(btn){btn.disabled=false;btn.textContent='⬇️ PDF';}});
+}
+</script>
+</body>
+</html>

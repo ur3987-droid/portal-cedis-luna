@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
@@ -232,20 +234,8 @@ textarea{resize:vertical;min-height:72px;line-height:1.6;}
 .ev-bhdr span{font-family:"Bebas Neue",sans-serif;color:#fff;font-size:15px;letter-spacing:.08em;}
 
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js">
-function generarReporte(){
-  var btn = document.getElementById('btn-reporte');
-  if(btn){ btn.disabled=true; btn.textContent='⏳ Generando...'; }
-  iframePost(SCRIPT_URL, {tipo:'reporte_ejecutivo'}, function(d){
-    if(btn){ btn.disabled=false; btn.textContent='📊 Reporte Ejecutivo'; }
-    if(d && d.url){
-      window.open(d.url, '_blank');
-    } else {
-      alert('Error: ' + (d ? (d.msg||JSON.stringify(d)) : 'sin respuesta'));
-    }
-  });
-}
-</script>
+
+
 </head>
 <body>
 
@@ -3675,6 +3665,20 @@ function promDescargar(){
     if(btn){btn.disabled=false;btn.textContent='⬇️ PDF';}
   }).catch(function(e){console.error(e);document.body.removeChild(container);if(btn){btn.disabled=false;btn.textContent='⬇️ PDF';}});
 }
+
+function generarReporte(){
+  var btn = document.getElementById('btn-reporte');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Generando...'; }
+  iframePost(SCRIPT_URL, {tipo:'reporte_ejecutivo'}, function(d){
+    if(btn){ btn.disabled=false; btn.textContent='📊 Reporte Ejecutivo'; }
+    if(d && d.url){
+      window.open(d.url, '_blank');
+    } else {
+      alert('Error: ' + (d ? (d.msg||JSON.stringify(d)) : 'sin respuesta'));
+    }
+  });
+}
+
 </script>
 </body>
 </html>

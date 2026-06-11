@@ -4,8 +4,6 @@
 <meta charset="UTF-8">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-
-
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
@@ -234,8 +232,70 @@ textarea{resize:vertical;min-height:72px;line-height:1.6;}
 .ev-bhdr span{font-family:"Bebas Neue",sans-serif;color:#fff;font-size:15px;letter-spacing:.08em;}
 
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js">
+function sesionVerificar(email, onEspejo, onNormal) {
+  var tabId = getTabId();
+  fetch(SCRIPT_URL + '?tipo=sesion_check&email=' + encodeURIComponent(email) + '&tabId=' + encodeURIComponent(tabId))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d && d.activa) {
+        onEspejo(); // hay sesión de otro tab → modo espejo
+      } else {
+        onNormal(); // no hay sesión → modo normal, registrar
+      }
+    })
+    .catch(function() { onNormal(); }); // si falla, entrar normal
+}
+
+// Publicar estado actual al espejo (lo llaman las funciones del portal)
+function espejoPublicar(modulo, paso, datos) {
+  if (sesionEspejo || !sesionActual) return;
+  var body = new URLSearchParams();
+  body.append('tipo',   'espejo_pub');
+  body.append('email',  sesionActual.email);
+  body.append('modulo', modulo);
+  body.append('paso',   paso);
+  body.append('datos',  JSON.stringify(datos || {}));
+  fetch(SCRIPT_URL, { method:'POST', body: body }).catch(function(){});
+}
+
+// ── Modo espejo: polling y render ──
+function espejoIniciar() {
+  sesionEspejo = true;
+  // Banner fijo
+  var banner = document.createElement('div');
+  banner.id = 'espejo-banner';
+  banner.innerHTML = '<span style="font-size:14px;">👁 Modo solo lectura — Sesión espejo activa</span>' +
+    '<span id="espejo-ts" style="font-size:11px;opacity:.7;margin-left:12px;"></span>';
+  banner.style.cssText = 'position:fixed;top:0;left:0;width:100%;background:#1D4F73;color:#fff;padding:10px 20px;z-index:99999;display:flex;align-items:center;justify-content:space-between;font-family:DM Sans,sans-serif;font-weight:600;';
+  document.body.prepend(banner);
+  document.getElementById('app-root').style.marginTop = '44px';
+  // Bloquear interacción
+  document.addEventListener('click',   function(e){ if(e.target.closest('button,input,select,textarea,a')) { e.preventDefault(); e.stopPropagation(); } }, true);
+  document.addEventListener('keydown', function(e){ e.preventDefault(); }, true);
+  // Ocultar todas las pestañas y mostrar vista espejo
+  document.querySelectorAll('.ntab').forEach(function(t){ t.style.display='none'; });
+  document.querySelectorAll('.module').forEach(function(m){ m.classList.remove('active'); });
+  var ev = document.getElementById('espejo-contenido');
+  if (ev) ev.parentElement.style.display = 'block';
+  // Polling cada 5 segundos
+  espejoPolling();
+  espejoInterval = setInterval(espejoPolling, 5000);
+}
+
+function espejoPolling() {
+  if (!sesionActual) return;
+  fetch(SCRIPT_URL + '?tipo=espejo_get&email=' + encodeURIComponent(sesionActual.email))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var ts = document.getElementById('espejo-ts');
+      if (ts) ts.textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      espejoRender(d);
+    }).catch(function(){});
+}
 
 
+</script>
 </head>
 <body>
 
@@ -290,13 +350,13 @@ textarea{resize:vertical;min-height:72px;line-height:1.6;}
     <div class="ntab" id="ntab2" onclick="showMod(2)">&#128230; Inventario</div>
     <div class="ntab" id="ntab7" onclick="showMod(7)" style="display:none;">&#128196; Historial SDP</div>
     <div class="ntab" id="ntab8" onclick="showMod(8)" style="display:none;">&#128202; Promedios</div>
-    <div class="ntab" id="ntab9" onclick="showMod(9)" style="display:none;">&#128666; Desempeño CEDIS</div>
     <div class="ntab" id="ntab1" onclick="showMod(1)">&#128722; Solicitud de Pedido</div>
     <div class="ntab" id="ntab3" onclick="showMod(3)">&#128203; Evaluacion de Entrega</div>
     <div class="ntab" id="ntab5" onclick="showMod(5)" style="display:none;">&#128179; Compras Conciliadas</div>
     <button id="btn-transferencias" onclick="abrirTransferencias()" style="display:block;background:#E8F7F1;color:#2E9E6B;border:1px solid rgba(46,158,107,.3);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;margin:auto 0 auto 8px;">🔄 Transferencias</button>
-    <button id="btn-reporte" onclick="generarReporte()" style="display:none;background:#1D4F73;color:#fff;border:none;border-radius:10px;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer;margin-left:8px;">📊 Reporte Ejecutivo</button>
-    v>
+
+  </di
+    <button id="btn-reporte" onclick="generarReporte()" style="display:none;background:#1D4F73;color:#fff;border:none;border-radius:10px;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer;margin-left:8px;">📊 Reporte Ejecutivo</button>v>
 </div>
 
 <!-- MOD1: SDP -->
@@ -1616,7 +1676,6 @@ function showMod(n){
     if(n===5) conciliacionCargar();
     if(n===7) histSdpCargar();
   if(n===8) promCargar();
-  if(n===9) cedCargar();
     espejoPublicar('Módulo '+n,'abierto',{});
     var btnTr=document.getElementById('btn-transferencias');
     if(btnTr) btnTr.style.display='block';
@@ -2648,8 +2707,6 @@ function aplicarRol(){
   var _mod8=document.getElementById('mod8'),_ntab8=document.getElementById('ntab8');
   if(_mod8) _mod8.style.display=(rol==='admin')?'block':'none';
   if(_ntab8) _ntab8.style.display=(rol==='admin')?'flex':'none';
-  var _btnRep=document.getElementById('btn-reporte');
-  if(_btnRep) _btnRep.style.display=(rol==='admin')?'inline-block':'none';
   var tabsPermitidos = {
     'ntab4': ['admin','cedis','sucursal'],  // Historial
     'ntab2': ['admin','sucursal'],           // Inventario
@@ -3496,227 +3553,73 @@ function verPdfSDP(btn){
     .catch(function(){ btn.textContent='Error'; });
 }
 
-
-function concDescarga(){
-  var btn2 = document.querySelector('[onclick="concDescarga()"]');
-  if(btn2){btn2.disabled=true; btn2.textContent='⏳ Generando...';}
-  var suc   = document.getElementById('conc-suc').value || 'Todas';
-  var desde = document.getElementById('conc-desde').value || '';
-  var hasta = document.getElementById('conc-hasta').value || '';
-  var periodo = (desde||hasta) ? (desde + (hasta?' — '+hasta:'')) : 'Periodo completo';
-  var tableEl = document.querySelector('#conc-tabla table');
-  var tableHTML = tableEl ? tableEl.outerHTML : '<p>Sin datos</p>';
-  var tp = document.getElementById('conc-total-ped');
-  var tm = document.getElementById('conc-monto-total');
-  var tr2= document.getElementById('conc-monto-real');
-  var td = document.getElementById('conc-diferencia');
-  var container = document.createElement('div');
-  container.style.cssText = 'position:absolute;left:-9999px;top:0;width:1100px;background:#fff;padding:24px;font-family:Arial,sans-serif;font-size:11px;';
-  container.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #1D4F73;padding-bottom:10px;margin-bottom:14px;">' +
-      '<div><div style="font-size:22px;font-weight:700;color:#1D4F73;">Luna Media Café</div>' +
-      '<div style="font-size:11px;color:#6B7E93;text-transform:uppercase;letter-spacing:1px;">Compras Conciliadas</div></div>' +
-      '<div style="text-align:right;font-size:11px;color:#6B7E93;">Sucursal: <strong style="color:#182533;">' + suc + '</strong><br>Período: <strong style="color:#182533;">' + periodo + '</strong><br>' + new Date().toLocaleString('es-MX',{hour12:false}) + '</div>' +
-    '</div>' +
-    '<style>table{width:100%;border-collapse:collapse;}th{background:#1D4F73;color:white;padding:5px 8px;font-size:9px;text-align:left;}td{padding:4px 8px;border-bottom:1px solid #EEF2F7;font-size:10px;}tr:nth-child(even) td{background:#F8FAFE;}</style>' +
-    tableHTML +
-    '<div style="display:flex;gap:24px;margin-top:14px;background:#EBF4FB;padding:10px 14px;border-radius:8px;">' +
-      '<div style="text-align:center;"><div style="font-size:16px;font-weight:700;color:#1D4F73;">' + (tp?tp.textContent:'') + '</div><div style="font-size:9px;color:#6B7E93;text-transform:uppercase;">Pedidos</div></div>' +
-      '<div style="text-align:center;"><div style="font-size:16px;font-weight:700;color:#1D4F73;">' + (tm?tm.textContent:'') + '</div><div style="font-size:9px;color:#6B7E93;text-transform:uppercase;">Total Estimado</div></div>' +
-      '<div style="text-align:center;"><div style="font-size:16px;font-weight:700;color:#2E9E6B;">' + (tr2?tr2.textContent:'') + '</div><div style="font-size:9px;color:#6B7E93;text-transform:uppercase;">Total Real</div></div>' +
-      '<div style="text-align:center;"><div style="font-size:16px;font-weight:700;">' + (td?td.textContent:'') + '</div><div style="font-size:9px;color:#6B7E93;text-transform:uppercase;">Diferencia</div></div>' +
-    '</div>' +
-    '<div style="margin-top:12px;text-align:center;font-size:9px;color:#9BADBF;">Luna Media Café · Portal OpsLMC · ' + new Date().toLocaleString('es-MX',{hour12:false}) + '</div>';
-  document.body.appendChild(container);
-  html2canvas(container,{scale:2,useCORS:true,backgroundColor:'#ffffff'}).then(function(canvas){
-    var doc=new window.jspdf.jsPDF('l','mm','a4');
-    var imgW=297,pageH=210,srcY=0,page=0;
-    var imgH=canvas.height*imgW/canvas.width;
-    while(srcY<canvas.height){
-      var srcH=Math.min(canvas.height-srcY,Math.round(canvas.height*pageH/imgH));
-      var pc=document.createElement('canvas');
-      pc.width=canvas.width;pc.height=srcH;
-      pc.getContext('2d').drawImage(canvas,0,srcY,canvas.width,srcH,0,0,canvas.width,srcH);
-      if(page>0)doc.addPage();
-      doc.addImage(pc.toDataURL('image/jpeg',0.95),'JPEG',0,0,imgW,srcH*imgW/canvas.width);
-      srcY+=srcH;page++;
-    }
-    doc.save('Compras_Conciliadas_'+new Date().toISOString().split('T')[0]+'.pdf');
-    document.body.removeChild(container);
-    if(btn2){btn2.disabled=false;btn2.textContent='⬇️ Descargar';}
-  }).catch(function(e){console.error(e);document.body.removeChild(container);if(btn2){btn2.disabled=false;btn2.textContent='⬇️ Descargar';}});
-}
-
 function generarReporte(){
   var btn = document.getElementById('btn-reporte');
   if(btn){ btn.disabled=true; btn.textContent='⏳ Generando...'; }
-  iframePost(SCRIPT_URL, {tipo:'reporte_ejecutivo'}, function(d){
-    if(btn){ btn.disabled=false; btn.textContent='📊 Reporte Ejecutivo'; }
-    if(d && d.url){ window.open(d.url, '_blank'); }
-    else { alert('Error: ' + (d ? (d.msg||JSON.stringify(d)) : 'sin respuesta')); }
-  });
-}
-
-// ══ MÓDULO 8: PROMEDIOS DE SOLICITUD ══
-function promCargar(){
-  var suc=document.getElementById('prom-suc').value;
-  var desde=document.getElementById('prom-desde').value;
-  var hasta=document.getElementById('prom-hasta').value;
-  var res=document.getElementById('prom-resultado');
-  var load=document.getElementById('prom-loading');
-  if(!desde||!hasta){alert('Selecciona un período de fechas.');return;}
-  res.innerHTML='';load.style.display='block';
-  var url=SCRIPT_URL+'?tipo=historial_sdp';
-  if(suc) url+='&sucursal='+encodeURIComponent(suc);
-  if(desde) url+='&desde='+encodeURIComponent(desde);
-  if(hasta) url+='&hasta='+encodeURIComponent(hasta);
-  fetch(url).then(function(r){return r.json();}).then(function(data){
-    load.style.display='none';
-    if(!data||!data.length){res.innerHTML='<div style="text-align:center;padding:40px;color:var(--grey-txt);">Sin datos para el período.</div>';return;}
-    var evaluadas=data.filter(function(r){return r.estado==='EVALUADA';});
-    if(!evaluadas.length){res.innerHTML='<div style="text-align:center;padding:40px;color:var(--grey-txt);">No hay pedidos evaluados en este período.</div>';return;}
-    promRender(evaluadas,desde,hasta);
-  }).catch(function(){load.style.display='none';res.innerHTML='<div style="color:#D4504A;text-align:center;padding:20px;">Error al cargar.</div>';});
-}
-
-function promRender(data,desde,hasta){
-  var productos={};
-  var diasPeriodo=Math.max(1,(new Date(hasta)-new Date(desde))/(1000*60*60*24));
-  var semanas=Math.max(1,diasPeriodo/7);
-  var meses=Math.max(1,diasPeriodo/30);
-  data.forEach(function(sdp){
-    if(!sdp.productos)return;
-    sdp.productos.split('\n').forEach(function(line){
-      var p=line.split('|');
-      if(p.length<5)return;
-      var code=p[0].trim(),nombre=p[1].trim(),pres=p[2]?p[2].trim():'';
-      var qty=parseFloat(String(p[4]||'0').replace('x',''))||0;
-      if(!code||qty===0)return;
-      if(!productos[code])productos[code]={nombre:nombre,pres:pres,qtys:[],sucursales:{}};
-      productos[code].qtys.push(qty);
-      productos[code].sucursales[sdp.sucursal]=(productos[code].sucursales[sdp.sucursal]||0)+qty;
-    });
-  });
-  var codes=Object.keys(productos).sort(function(a,b){
-    return productos[b].qtys.reduce(function(s,v){return s+v;},0)-productos[a].qtys.reduce(function(s,v){return s+v;},0);
-  });
-  if(!codes.length){document.getElementById('prom-resultado').innerHTML='<div style="text-align:center;padding:40px;color:var(--grey-txt);">Sin productos encontrados.</div>';return;}
-  var h='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
-  h+='<thead><tr style="background:var(--blue-dkr);">';
-  ['#','Código','Producto','Presentación','Total','Prom/Semana','Prom/Mes','Mínimo','Máximo','Por Sucursal'].forEach(function(c){
-    h+='<th style="padding:8px 10px;color:rgba(255,255,255,.9);font-size:10px;white-space:nowrap;">'+c+'</th>';
-  });
-  h+='</tr></thead><tbody>';
-  codes.forEach(function(code,i){
-    var p=productos[code];
-    var total=p.qtys.reduce(function(s,v){return s+v;},0);
-    var min=Math.min.apply(null,p.qtys),max=Math.max.apply(null,p.qtys);
-    var sucStr=Object.keys(p.sucursales).map(function(s){
-      return '<span style="background:var(--blue-lt);color:var(--blue-dk);padding:1px 6px;border-radius:8px;font-size:9px;margin:1px;display:inline-block;">'+s+': '+p.sucursales[s].toFixed(1)+'</span>';
-    }).join('');
-    var bg=i%2===0?'#fff':'#F8FAFE';
-    h+='<tr style="background:'+bg+';border-top:1px solid var(--grey-lt);">';
-    h+='<td style="padding:7px 10px;color:var(--grey-txt);">'+(i+1)+'</td>';
-    h+='<td style="padding:7px 10px;font-family:monospace;font-size:11px;color:var(--blue);">'+code+'</td>';
-    h+='<td style="padding:7px 10px;font-weight:600;">'+p.nombre+'</td>';
-    h+='<td style="padding:7px 10px;font-size:11px;color:var(--grey-txt);">'+p.pres+'</td>';
-    h+='<td style="padding:7px 10px;font-weight:700;text-align:right;color:var(--blue-dk);">'+total.toFixed(2)+'</td>';
-    h+='<td style="padding:7px 10px;text-align:right;font-weight:600;">'+(total/semanas).toFixed(2)+'</td>';
-    h+='<td style="padding:7px 10px;text-align:right;font-weight:600;">'+(total/meses).toFixed(2)+'</td>';
-    h+='<td style="padding:7px 10px;text-align:right;color:#2E9E6B;font-weight:700;">'+min.toFixed(2)+'</td>';
-    h+='<td style="padding:7px 10px;text-align:right;color:#D4504A;font-weight:700;">'+max.toFixed(2)+'</td>';
-    h+='<td style="padding:7px 10px;">'+sucStr+'</td>';
-    h+='</tr>';
-  });
-  h+='</tbody></table></div>';
-  document.getElementById('prom-resultado').innerHTML=h;
-}
-
-function promDescargar(){
-  var res=document.getElementById('prom-resultado');
-  var suc=document.getElementById('prom-suc').value||'Todas';
-  var desde=document.getElementById('prom-desde').value||'';
-  var hasta=document.getElementById('prom-hasta').value||'';
-  if(!res||!res.innerHTML.trim()){alert('Primero analiza los datos.');return;}
-  var btn=document.getElementById('btn-prom-dl');
-  if(btn){btn.disabled=true;btn.textContent='⏳ Generando...';}
-  var container=document.createElement('div');
-  container.style.cssText='position:absolute;left:-9999px;top:0;width:1200px;background:#fff;padding:20px;font-family:Arial,sans-serif;font-size:10px;';
-  container.innerHTML='<h2 style="color:#1D4F73;margin-bottom:4px;">Luna Media Café — Promedios de Solicitud</h2>'+
-    '<div style="font-size:10px;color:#6B7E93;margin-bottom:12px;">Sucursal: <strong>'+suc+'</strong> | Período: <strong>'+desde+' — '+hasta+'</strong></div>'+
-    '<style>table{width:100%;border-collapse:collapse;}th{background:#1D4F73;color:white;padding:5px 8px;font-size:9px;}td{padding:4px 8px;border-bottom:1px solid #EEF2F7;font-size:10px;}tr:nth-child(even) td{background:#F8FAFE;}</style>'+
-    res.innerHTML;
-  document.body.appendChild(container);
-  html2canvas(container,{scale:2,useCORS:true,backgroundColor:'#ffffff'}).then(function(canvas){
-    var doc=new window.jspdf.jsPDF('l','mm','a4');
-    var imgW=297,pageH=210,srcY=0,page=0;
-    var imgH=canvas.height*imgW/canvas.width;
-    while(srcY<canvas.height){
-      var srcH=Math.min(canvas.height-srcY,Math.round(canvas.height*pageH/imgH));
-      var pc=document.createElement('canvas');
-      pc.width=canvas.width;pc.height=srcH;
-      pc.getContext('2d').drawImage(canvas,0,srcY,canvas.width,srcH,0,0,canvas.width,srcH);
-      if(page>0)doc.addPage();
-      doc.addImage(pc.toDataURL('image/jpeg',0.95),'JPEG',0,0,imgW,srcH*imgW/canvas.width);
-      srcY+=srcH;page++;
-    }
-    doc.save('Promedios_'+desde+'_'+hasta+'.pdf');
-    document.body.removeChild(container);
-    if(btn){btn.disabled=false;btn.textContent='⬇️ PDF';}
-  }).catch(function(e){console.error(e);document.body.removeChild(container);if(btn){btn.disabled=false;btn.textContent='⬇️ PDF';}});
-}
-
-function generarReporte(){
-  var btn = document.getElementById('btn-reporte');
-  if(btn){ btn.disabled=true; btn.textContent='⏳ Generando...'; }
-  iframePost(SCRIPT_URL, {tipo:'reporte_ejecutivo'}, function(d){
-    if(btn){ btn.disabled=false; btn.textContent='📊 Reporte Ejecutivo'; }
-    if(d && d.url){
-      window.open(d.url, '_blank');
-    } else {
-      alert('Error: ' + (d ? (d.msg||JSON.stringify(d)) : 'sin respuesta'));
-    }
-  });
-}
-
-
-// ══ SESIÓN ══
-function sesionVerificar(email, cbEspejo, cbNormal){
-  fetch(SCRIPT_URL + '?tipo=sesion_check&email=' + encodeURIComponent(email))
+  fetch(SCRIPT_URL + '?tipo=reporte_ejecutivo')
     .then(function(r){ return r.json(); })
     .then(function(d){
-      if(d && d.activa && d.email === email){
-        cbEspejo();
+      if(d && d.url){
+        window.open(d.url, '_blank');
+        alert('✅ Reporte generado exitosamente. Se abrirá en una nueva pestaña.');
       } else {
-        cbNormal();
+        alert('Error al generar reporte: ' + (d ? d.msg : 'sin respuesta'));
       }
     })
-    .catch(function(){ cbNormal(); });
+    .catch(function(err){ alert('Error: ' + err); })
+    .finally(function(){
+      if(btn){ btn.disabled=false; btn.textContent='📊 Reporte Ejecutivo'; }
+    });
 }
 
-function sesionIniciar(email){
-  iframePost(SCRIPT_URL, {tipo:'sesion_ping', email:email, accion:'iniciar'}, function(){});
-  sesionPingInterval = setInterval(function(){
-    iframePost(SCRIPT_URL, {tipo:'sesion_ping', email:email, accion:'ping'}, function(){});
-  }, 60000);
-}
+function concDescarga(){
+  // Build printable HTML from current concRender data
+  var tabla = document.getElementById('conc-tabla');
+  if(!tabla){ alert('No hay datos para descargar.'); return; }
+  var suc   = document.getElementById('conc-suc').value || 'Todas las sucursales';
+  var desde = document.getElementById('conc-desde').value || '';
+  var hasta = document.getElementById('conc-hasta').value || '';
+  var estado= document.getElementById('conc-estado-filtro').value || 'Todos';
+  var periodo = (desde || hasta) ? (desde + (hasta?' — '+hasta:'')) : 'Periodo completo';
 
-function sesionCerrar(){
-  if(sesionActual && sesionActual.email){
-    iframePost(SCRIPT_URL, {tipo:'sesion_cerrar', email:sesionActual.email}, function(){});
+  var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+    '<style>' +
+    'body{font-family:Arial,sans-serif;font-size:11px;color:#182533;margin:20px;}' +
+    'h1{font-size:18px;color:#1D4F73;margin-bottom:4px;}' +
+    '.sub{font-size:11px;color:#6B7E93;margin-bottom:16px;}' +
+    'table{width:100%;border-collapse:collapse;}' +
+    'th{background:#1D4F73;color:white;padding:6px 8px;text-align:left;font-size:10px;}' +
+    'td{padding:5px 8px;border-bottom:1px solid #EEF2F7;font-size:11px;}' +
+    'tr:nth-child(even) td{background:#F8FAFE;}' +
+    '.totales{margin-top:16px;background:#EBF4FB;border-radius:8px;padding:12px;display:flex;gap:32px;}' +
+    '.tot-item{text-align:center;}' +
+    '.tot-val{font-size:16px;font-weight:700;color:#1D4F73;}' +
+    '.tot-lbl{font-size:9px;text-transform:uppercase;color:#6B7E93;}' +
+    '.footer{margin-top:20px;font-size:9px;color:#9BADBF;text-align:center;border-top:1px solid #EEF2F7;padding-top:8px;}' +
+    '@media print{body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;} @page{margin:12mm;size:A4 landscape;}}' +
+    '</style></head><body>';
+
+  html += '<h1>Luna Media Café — Compras Conciliadas</h1>';
+  html += '<div class="sub">Sucursal: <strong>' + suc + '</strong> &nbsp;|&nbsp; Período: <strong>' + periodo + '</strong> &nbsp;|&nbsp; Estado: <strong>' + estado + '</strong></div>';
+
+  // Get table HTML from portal - extract thead and tbody
+  var tableEl = tabla.querySelector('table');
+  if(!tableEl){ alert('No hay tabla para descargar.'); return; }
+  html += tableEl.outerHTML;
+
+  // Get totales
+  var tp = document.getElementById('conc-total-ped');
+  var tm = document.getElementById('conc-monto-total');
+  var tr = document.getElementById('conc-monto-real');
+  var td = document.getElementById('conc-diferencia');
+  if(tp){
+    html += '<div class="totales">';
+    html += '<div class="tot-item"><div class="tot-val">' + (tp.textContent||'0') + '</div><div class="tot-lbl">Pedidos</div></div>';
+    html += '<div class="tot-item"><div class="tot-val">' + (tm?tm.textContent:'') + '</div><div class="tot-lbl">Total Estimado</div></div>';
+    html += '<div class="tot-item"><div class="tot-val">' + (tr?tr.textContent:'') + '</div><div class="tot-lbl">Total Real</div></div>';
+    html += '<div class="tot-item"><div class="tot-val">' + (td?td.textContent:'') + '</div><div class="tot-lbl">Diferencia</div></div>';
+    html += '</div>';
   }
-  if(sesionPingInterval) clearInterval(sesionPingInterval);
-  sesionActual = null;
-  document.getElementById('app-root').style.display = 'none';
-  document.getElementById('login-screen').style.display = 'flex';
-}
 
-function espejoIniciar(){
-  // Modo espejo: solo visualizar, sin modificar sesión
-  Logger && Logger.log && Logger.log('Modo espejo iniciado');
-}
-
-var sesionPingInterval = null;
-</script>
-</body>
-</html>
+  html += '<div class="footer">Luna Media Café &nbsp;·&nbsp; Generado el ' + new Date().toLocaleString('es-MX',{hour12:false}) + '</div>';
+  html += '</body></html>

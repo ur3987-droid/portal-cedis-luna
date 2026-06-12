@@ -3758,53 +3758,36 @@ function generarReporte(){
 }
 
 function concDescarga(){
-  // Build printable HTML from current concRender data
-  var tabla = document.getElementById('conc-tabla');
-  if(!tabla){ alert('No hay datos para descargar.'); return; }
-  var suc   = document.getElementById('conc-suc').value || 'Todas las sucursales';
-  var desde = document.getElementById('conc-desde').value || '';
-  var hasta = document.getElementById('conc-hasta').value || '';
-  var estado= document.getElementById('conc-estado-filtro').value || 'Todos';
-  var periodo = (desde || hasta) ? (desde + (hasta?' — '+hasta:'')) : 'Periodo completo';
-
-  var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
-    '<style>' +
-    'body{font-family:Arial,sans-serif;font-size:11px;color:#182533;margin:20px;}' +
-    'h1{font-size:18px;color:#1D4F73;margin-bottom:4px;}' +
-    '.sub{font-size:11px;color:#6B7E93;margin-bottom:16px;}' +
-    'table{width:100%;border-collapse:collapse;}' +
-    'th{background:#1D4F73;color:white;padding:6px 8px;text-align:left;font-size:10px;}' +
-    'td{padding:5px 8px;border-bottom:1px solid #EEF2F7;font-size:11px;}' +
-    'tr:nth-child(even) td{background:#F8FAFE;}' +
-    '.totales{margin-top:16px;background:#EBF4FB;border-radius:8px;padding:12px;display:flex;gap:32px;}' +
-    '.tot-item{text-align:center;}' +
-    '.tot-val{font-size:16px;font-weight:700;color:#1D4F73;}' +
-    '.tot-lbl{font-size:9px;text-transform:uppercase;color:#6B7E93;}' +
-    '.footer{margin-top:20px;font-size:9px;color:#9BADBF;text-align:center;border-top:1px solid #EEF2F7;padding-top:8px;}' +
-    '@media print{body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;} @page{margin:12mm;size:A4 landscape;}}' +
-    '</style></head><body>';
-
-  html += '<h1>Luna Media Café — Compras Conciliadas</h1>';
-  html += '<div class="sub">Sucursal: <strong>' + suc + '</strong> &nbsp;|&nbsp; Período: <strong>' + periodo + '</strong> &nbsp;|&nbsp; Estado: <strong>' + estado + '</strong></div>';
-
-  // Get table HTML from portal - extract thead and tbody
-  var tableEl = tabla.querySelector('table');
-  if(!tableEl){ alert('No hay tabla para descargar.'); return; }
-  html += tableEl.outerHTML;
-
-  // Get totales
-  var tp = document.getElementById('conc-total-ped');
-  var tm = document.getElementById('conc-monto-total');
-  var tr = document.getElementById('conc-monto-real');
-  var td = document.getElementById('conc-diferencia');
-  if(tp){
-    html += '<div class="totales">';
-    html += '<div class="tot-item"><div class="tot-val">' + (tp.textContent||'0') + '</div><div class="tot-lbl">Pedidos</div></div>';
-    html += '<div class="tot-item"><div class="tot-val">' + (tm?tm.textContent:'') + '</div><div class="tot-lbl">Total Estimado</div></div>';
-    html += '<div class="tot-item"><div class="tot-val">' + (tr?tr.textContent:'') + '</div><div class="tot-lbl">Total Real</div></div>';
-    html += '<div class="tot-item"><div class="tot-val">' + (td?td.textContent:'') + '</div><div class="tot-lbl">Diferencia</div></div>';
-    html += '</div>';
-  }
-
-  html += '<div class="footer">Luna Media Café &nbsp;·&nbsp; Generado el ' + new Date().toLocaleString('es-MX',{hour12:false}) + '</div>';
-  html += '</body></html>
+  var btn2 = document.querySelector('[onclick="concDescarga()"]');
+  if(btn2){btn2.disabled=true; btn2.textContent='⏳ Generando...';}
+  var suc   = document.getElementById('conc-suc') ? document.getElementById('conc-suc').value : 'Todas';
+  var desde = document.getElementById('conc-desde') ? document.getElementById('conc-desde').value : '';
+  var hasta = document.getElementById('conc-hasta') ? document.getElementById('conc-hasta').value : '';
+  var periodo = (desde||hasta) ? (desde + (hasta?' — '+hasta:'')) : 'Periodo completo';
+  var tableEl = document.querySelector('#conc-tabla table');
+  var tableHTML = tableEl ? tableEl.outerHTML : '<p>Sin datos</p>';
+  var container = document.createElement('div');
+  container.style.cssText = 'position:absolute;left:-9999px;top:0;width:1100px;background:#fff;padding:24px;font-family:Arial,sans-serif;font-size:11px;';
+  container.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #1D4F73;padding-bottom:10px;margin-bottom:14px;"><div><div style="font-size:22px;font-weight:700;color:#1D4F73;">Luna Media Café</div><div style="font-size:11px;color:#6B7E93;text-transform:uppercase;letter-spacing:1px;">Compras Conciliadas</div></div><div style="text-align:right;font-size:11px;color:#6B7E93;">Sucursal: <strong style="color:#182533;">'+suc+'</strong><br>Período: <strong style="color:#182533;">'+periodo+'</strong><br>'+new Date().toLocaleString('es-MX',{hour12:false})+'</div></div><style>table{width:100%;border-collapse:collapse;}th{background:#1D4F73;color:white;padding:5px 8px;font-size:9px;text-align:left;}td{padding:4px 8px;border-bottom:1px solid #EEF2F7;font-size:10px;}tr:nth-child(even) td{background:#F8FAFE;}</style>'+tableHTML;
+  document.body.appendChild(container);
+  html2canvas(container,{scale:2,useCORS:true,backgroundColor:'#ffffff'}).then(function(canvas){
+    var doc=new window.jspdf.jsPDF('l','mm','a4');
+    var imgW=297,pageH=210,srcY=0,page=0;
+    var imgH=canvas.height*imgW/canvas.width;
+    while(srcY<canvas.height){
+      var srcH=Math.min(canvas.height-srcY,Math.round(canvas.height*pageH/imgH));
+      var pc=document.createElement('canvas');
+      pc.width=canvas.width;pc.height=srcH;
+      pc.getContext('2d').drawImage(canvas,0,srcY,canvas.width,srcH,0,0,canvas.width,srcH);
+      if(page>0)doc.addPage();
+      doc.addImage(pc.toDataURL('image/jpeg',0.95),'JPEG',0,0,imgW,srcH*imgW/canvas.width);
+      srcY+=srcH;page++;
+    }
+    doc.save('Compras_Conciliadas_'+new Date().toISOString().split('T')[0]+'.pdf');
+    document.body.removeChild(container);
+    if(btn2){btn2.disabled=false;btn2.textContent='⬇️ Descargar';}
+  }).catch(function(e){console.error(e);document.body.removeChild(container);if(btn2){btn2.disabled=false;btn2.textContent='⬇️ Descargar';}});
+}
+</script>
+</body>
+</html>

@@ -3559,5 +3559,761 @@ function concDescarga(){
   }
 
   html += '<div class="footer">Luna Media Café &nbsp;·&nbsp; Generado el ' + new Date().toLocaleString('es-MX',{hour12:false}) + '</div>';
-  html += '</body>
+  html += '</body></html>';
+
+  // Open in new window and trigger print -> Save as PDF
+    // Generate PDF using html2canvas + jsPDF
+  var btn2 = document.querySelector('[onclick="concDescarga()"]');
+  if(btn2){btn2.disabled=true; btn2.textContent='⏳ Generando...';}
+  var container = document.createElement('div');
+  container.style.cssText = 'position:fixed;left:-9999px;top:0;width:1100px;background:#fff;padding:24px;font-family:Arial,sans-serif;font-size:11px;';
+  container.innerHTML = html;
+  document.body.appendChild(container);
+  html2canvas(container,{scale:2,useCORS:true,backgroundColor:'#ffffff'}).then(function(canvas){
+    var doc = new window.jspdf.jsPDF('l','mm','a4');
+    var imgW=297, pageH=210;
+    var imgH = canvas.height * imgW / canvas.width;
+    var srcY=0, page=0;
+    while(srcY < canvas.height){
+      var srcH = Math.min(canvas.height-srcY, Math.round(canvas.height*pageH/imgH));
+      var pc = document.createElement('canvas');
+      pc.width=canvas.width; pc.height=srcH;
+      pc.getContext('2d').drawImage(canvas,0,srcY,canvas.width,srcH,0,0,canvas.width,srcH);
+      if(page>0) doc.addPage();
+      doc.addImage(pc.toDataURL('image/jpeg',0.95),'JPEG',0,0,imgW,srcH*imgW/canvas.width);
+      srcY+=srcH; page++;
+    }
+    doc.save('Compras_Conciliadas_'+new Date().toISOString().split('T')[0]+'.pdf');
+    document.body.removeChild(container);
+    if(btn2){btn2.disabled=false; btn2.textContent='⬇️ Descargar';}
+  }).catch(function(e){
+    console.error(e);
+    document.body.removeChild(container);
+    if(btn2){btn2.disabled=false; btn2.textContent='⬇️ Descargar';}
+  });
+}
+
+function borrarRegistro(btn){
+  var folio = btn.getAttribute('data-folio');
+  var suc   = btn.getAttribute('data-suc');
+  sdpEliminarLinea(folio, suc);
+}
+
+function sdpEliminarLinea(folio, sucursal){
+  if(!confirm('Eliminar definitivamente la SDP ' + folio + '?\n\nEsta accion no se puede deshacer.')) return;
+  iframePost(SCRIPT_URL, {tipo:'eliminar_sdp', folio:folio, sucursal:sucursal}, function(){
+    var mod5=document.getElementById('mod5'), mod7=document.getElementById('mod7');
+    if(mod5 && mod5.classList.contains('active')) conciliacionCargar();
+    if(mod7 && mod7.classList.contains('active')) histSdpCargar();
+    alert('Eliminado correctamente.');
+  });
+}
+
+function histInvEliminarLinea(folio){
+  if(!confirm('Eliminar definitivamente el inventario ' + folio + '?\n\nEsta accion no se puede deshacer.')) return;
+  iframePost(SCRIPT_URL, {
+    tipo:'eliminar_inv',
+    folio:folio,
+    canceladoPor: sesionActual ? sesionActual.nombre : 'Admin'
+  }, function(){
+    histCargar(); alert('Inventario cancelado. Se enviaron notificaciones.');
+  });
+}
+
+
+// ══ ELIMINAR LINEAS (solo Uriel) ══
+function eliminarLineaSDP(folio, sucursal, btn){
+  if(!confirm('¿Eliminar definitivamente la SDP ' + folio + '? Esta acción no se puede deshacer.')) return;
+  btn.disabled = true; btn.textContent = '...';
+  iframePost(SCRIPT_URL, {tipo:'eliminar_sdp', folio:folio, sucursal:sucursal}, function(){
+    var row=btn.closest('tr'); if(row) row.remove();
+  });
+}
+
+// ══ GESTIÓN DE TELÉFONOS CEDIS (solo Admin) ══
+
+
+
+function abrirTransferencias(){
+  // Pre-select emisora based on logged-in user's sucursal
+  var emisEl = document.getElementById('trans-emisora');
+  if(sesionActual && sesionActual.sucursal && emisEl){
+    emisEl.value = sesionActual.sucursal;
+    // Disable emisora if not admin
+    emisEl.disabled = sesionActual.rol !== 'admin';
+  }
+  transPedido = {};
+  document.getElementById('trans-step1').style.display='block';
+  document.getElementById('trans-ok').style.display='none';
+  document.getElementById('trans-inventario-wrap').style.display='none';
+  document.getElementById('trans-prod-lista').innerHTML='';
+  document.getElementById('trans-total').textContent='$0.00';
+  document.getElementById('modal-transferencia').style.display='block';
+  if(emisEl && emisEl.value) transCargarInventario();
+}
+
+function cerrarTransferencia(){
+  document.getElementById('modal-transferencia').style.display='none';
+}
+
+function transCargarInventario(){
+  var emisora = document.getElementById('trans-emisora').value;
+  if(!emisora) return;
+  document.getElementById('trans-loading').style.display='block';
+  document.getElementById('trans-inventario-wrap').style.display='none';
+  transPedido = {};
+
+  fetch(SCRIPT_URL + '?tipo=inventario_existencia&sucursal=' + encodeURIComponent(emisora))
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      document.getElementById('trans-loading').style.display='none';
+      if(!data || !data.conteo){ 
+        document.getElementById('trans-prod-lista').innerHTML='<div style="padding:20px;text-align:center;color:var(--grey-txt);">No hay inventario registrado para esta sucursal.</div>';
+        document.getElementById('trans-inventario-wrap').style.display='block';
+        return;
+      }
+      // Build product map from conteo
+      var existencia = {};
+      data.conteo.split(';').forEach(function(item){
+        var parts = item.split('|');
+        if(parts[0] && parseFloat(parts[1]||0) > 0) existencia[parts[0]] = parseFloat(parts[1]);
+      });
+      transRenderProductos(existencia, emisora);
+      document.getElementById('trans-inventario-wrap').style.display='block';
+    })
+    .catch(function(){
+      document.getElementById('trans-loading').style.display='none';
+      document.getElementById('trans-inventario-wrap').style.display='block';
+      document.getElementById('trans-prod-lista').innerHTML='<div style="padding:20px;text-align:center;color:#D4504A;">Error al cargar inventario.</div>';
+    });
+}
+
+function transRenderProductos(existencia, emisora){
+  var cat = (CATALOGO && CATALOGO.length > 0) ? CATALOGO : CATALOGO_LOCAL;
+  // Filter by sucursal type
+  var prods = cat.filter(function(p){
+    var esPost = emisora === 'Postrería' || emisora === 'Postreria';
+    if(emisora === 'CDP') return true;
+    if(esPost) return p.cat === 'POSTRERIA INSUMOS';
+    return p.cat !== 'POSTRERIA INSUMOS';
+  }).filter(function(p){ return existencia[p.code] > 0; });
+
+  if(!prods.length){
+    document.getElementById('trans-prod-lista').innerHTML='<div style="padding:20px;text-align:center;color:var(--grey-txt);">No hay productos con existencia disponibles.</div>';
+    return;
+  }
+
+  var h = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+  h += '<tr style="background:var(--blue-dkr);"><th style="padding:8px 12px;color:rgba(255,255,255,.8);text-align:left;font-size:11px;">Producto</th><th style="padding:8px 12px;color:rgba(255,255,255,.8);text-align:center;font-size:11px;">Existencia</th><th style="padding:8px 12px;color:rgba(255,255,255,.8);text-align:right;font-size:11px;">Precio</th><th style="padding:8px 12px;color:rgba(255,255,255,.8);text-align:center;font-size:11px;">Transferir</th></tr>';
+
+  prods.forEach(function(p, i){
+    var exist = existencia[p.code] || 0;
+    var isKg = p.pres && (p.pres.toLowerCase().indexOf('kg')>=0||p.pres.toLowerCase().indexOf('kilo')>=0);
+    var step = isKg ? '0.1' : '1';
+    h += '<tr style="background:' + (i%2===0?'#fff':'#f5f8fc') + ';border-top:1px solid var(--grey-lt);">';
+    h += '<td style="padding:8px 12px;"><div style="font-weight:600;">' + p.name + '</div><div style="font-size:11px;color:var(--grey-txt);font-family:monospace;">' + p.code + ' · ' + (p.pres||'') + '</div></td>';
+    h += '<td style="padding:8px 12px;text-align:center;font-weight:600;color:var(--blue);">' + exist + '</td>';
+    h += '<td style="padding:8px 12px;text-align:right;">' + fmtMoney(p.precio||0) + '</td>';
+    h += '<td style="padding:8px 12px;text-align:center;"><input type="number" min="0" max="' + exist + '" step="' + step + '" value="0" data-code="' + p.code + '" data-nombre="' + p.name + '" data-precio="' + (p.precio||0) + '" data-exist="' + exist + '" onchange="transSetQty(this)" style="width:70px;padding:5px;border:1px solid var(--grey-lt);border-radius:6px;text-align:center;font-size:13px;"></td>';
+    h += '</tr>';
+  });
+  h += '</table>';
+  document.getElementById('trans-prod-lista').innerHTML = h;
+  transActualizarTotal();
+}
+
+function transSetQty(inp){
+  var code   = inp.getAttribute('data-code');
+  var nombre = inp.getAttribute('data-nombre');
+  var precio = parseFloat(inp.getAttribute('data-precio')) || 0;
+  var exist  = parseFloat(inp.getAttribute('data-exist')) || 0;
+  var qty    = parseFloat(inp.value) || 0;
+  // Cap at existencia
+  if(qty > exist){ qty = exist; inp.value = exist; }
+  if(qty <= 0){ delete transPedido[code]; }
+  else { transPedido[code] = {qty:qty, nombre:nombre, precio:precio}; }
+  transActualizarTotal();
+}
+
+function transActualizarTotal(){
+  var total = 0;
+  Object.values(transPedido).forEach(function(p){ total += p.qty * p.precio; });
+  document.getElementById('trans-total').textContent = fmtMoney(total);
+}
+
+function transEnviar(){
+  console.log('transEnviar llamado');
+  var emisora   = document.getElementById('trans-emisora').value;
+  var receptora = document.getElementById('trans-receptora').value;
+  var obs       = document.getElementById('trans-obs').value;
+
+  console.log('emisora:', emisora, 'receptora:', receptora, 'productos:', Object.keys(transPedido).length);
+
+  if(!emisora)  { alert('Selecciona la sucursal emisora.'); return; }
+  if(!receptora){ alert('Selecciona la sucursal receptora.'); return; }
+  if(emisora === receptora){ alert('La emisora y receptora no pueden ser la misma.'); return; }
+  if(!Object.keys(transPedido).length){ alert('Selecciona al menos un producto a transferir.'); return; }
+
+  var total = 0;
+  Object.values(transPedido).forEach(function(p){ total += p.qty * p.precio; });
+  var folio = 'TRA-' + (Date.now()+3600000).toString().slice(-6);
+  var ts    = new Date(Date.now()+3600000).toLocaleString('es-MX',{hour12:false});
+
+  var productosStr = Object.keys(transPedido).map(function(code){
+    var p = transPedido[code];
+    return code + '|' + p.nombre + '||$' + p.precio.toFixed(2) + '|' + p.qty + 'x|$' + (p.qty*p.precio).toFixed(2);
+  }).join(';');
+
+  iframePost(SCRIPT_URL, {
+    tipo:          'transferencia',
+    folio:         folio,
+    timestamp:     ts,
+    emisora:       emisora,
+    receptora:     receptora,
+    totalEstimado: fmtMoney(total),
+    numProductos:  Object.keys(transPedido).length,
+    productos:     productosStr,
+    observaciones: obs || '',
+    enviadoPor:    sesionActual ? sesionActual.nombre : ''
+  }, function(){
+    document.getElementById('trans-folio-ok').textContent = folio;
+    document.getElementById('trans-step1').style.display='none';
+    document.getElementById('trans-ok').style.display='block';
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+// SESIÓN ACTIVA + ESPEJO EN TIEMPO REAL
+// ══════════════════════════════════════════════════════════
+var sesionEspejo   = false;
+var transPedido    = {}; // productos seleccionados para transferencia
+var espejoInterval = null;
+var pingInterval   = null;
+
+// Genera tabId único por pestaña (persiste en sessionStorage)
+function getTabId() {
+  var id = sessionStorage.getItem('lmc_tab');
+  if (!id) { id = 'tab_' + Date.now() + '_' + Math.random().toString(36).slice(2,6); sessionStorage.setItem('lmc_tab', id); }
+  return id;
+}
+
+// Dispositivo 1: registra sesión y mantiene heartbeat
+function sesionIniciar(email) {
+  var tabId = getTabId();
+  function ping() {
+    fetch(SCRIPT_URL + '?tipo=sesion_ping&email=' + encodeURIComponent(email) + '&tabId=' + encodeURIComponent(tabId))
+      .catch(function(){});
+  }
+  ping(); // ping inmediato
+  pingInterval = setInterval(ping, 45000); // cada 45 segundos
+  window.addEventListener('beforeunload', function() {
+    fetch(SCRIPT_URL + '?tipo=sesion_cerrar&email=' + encodeURIComponent(email)).catch(function(){});
+  });
+}
+
+// Verificar si hay otra sesión activa antes de entrar
+function sesionVerificar(email, onEspejo, onNormal) {
+  var tabId = getTabId();
+  fetch(SCRIPT_URL + '?tipo=sesion_check&email=' + encodeURIComponent(email) + '&tabId=' + encodeURIComponent(tabId))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d && d.activa) {
+        onEspejo(); // hay sesión de otro tab → modo espejo
+      } else {
+        onNormal(); // no hay sesión → modo normal, registrar
+      }
+    })
+    .catch(function() { onNormal(); }); // si falla, entrar normal
+}
+
+// Publicar estado actual al espejo (lo llaman las funciones del portal)
+function espejoPublicar(modulo, paso, datos) {
+  if (sesionEspejo || !sesionActual) return;
+  var body = new URLSearchParams();
+  body.append('tipo',   'espejo_pub');
+  body.append('email',  sesionActual.email);
+  body.append('modulo', modulo);
+  body.append('paso',   paso);
+  body.append('datos',  JSON.stringify(datos || {}));
+  fetch(SCRIPT_URL, { method:'POST', body: body }).catch(function(){});
+}
+
+// ── Modo espejo: polling y render ──
+function espejoIniciar() {
+  sesionEspejo = true;
+  // Banner fijo
+  var banner = document.createElement('div');
+  banner.id = 'espejo-banner';
+  banner.innerHTML = '<span style="font-size:14px;">👁 Modo solo lectura — Sesión espejo activa</span>' +
+    '<span id="espejo-ts" style="font-size:11px;opacity:.7;margin-left:12px;"></span>';
+  banner.style.cssText = 'position:fixed;top:0;left:0;width:100%;background:#1D4F73;color:#fff;padding:10px 20px;z-index:99999;display:flex;align-items:center;justify-content:space-between;font-family:DM Sans,sans-serif;font-weight:600;';
+  document.body.prepend(banner);
+  document.getElementById('app-root').style.marginTop = '44px';
+  // Bloquear interacción
+  document.addEventListener('click',   function(e){ if(e.target.closest('button,input,select,textarea,a')) { e.preventDefault(); e.stopPropagation(); } }, true);
+  document.addEventListener('keydown', function(e){ e.preventDefault(); }, true);
+  // Ocultar todas las pestañas y mostrar vista espejo
+  document.querySelectorAll('.ntab').forEach(function(t){ t.style.display='none'; });
+  document.querySelectorAll('.module').forEach(function(m){ m.classList.remove('active'); });
+  var ev = document.getElementById('espejo-contenido');
+  if (ev) ev.parentElement.style.display = 'block';
+  // Polling cada 5 segundos
+  espejoPolling();
+  espejoInterval = setInterval(espejoPolling, 5000);
+}
+
+function espejoPolling() {
+  if (!sesionActual) return;
+  fetch(SCRIPT_URL + '?tipo=espejo_get&email=' + encodeURIComponent(sesionActual.email))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var ts = document.getElementById('espejo-ts');
+      if (ts) ts.textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      espejoRender(d);
+    }).catch(function(){});
+}
+
+function espejoRender(d) {
+  var wrap = document.getElementById('espejo-contenido');
+  if (!wrap) return;
+  if (!d || !d.modulo) {
+    wrap.innerHTML =
+      '<div style="text-align:center;padding:60px 20px;">' +
+      '<div style="font-size:48px;margin-bottom:16px;">👁</div>' +
+      '<div style="font-size:17px;font-weight:600;color:var(--dark);margin-bottom:8px;">Esperando actividad...</div>' +
+      '<div style="font-size:13px;color:var(--grey-txt);">En cuanto el usuario inicie una tarea aparecerá aquí en tiempo real.</div>' +
+      '<div style="font-size:12px;color:var(--blue);margin-top:10px;">Actualizando cada 5 segundos</div>' +
+      '</div>';
+    return;
+  }
+  var datos = {};
+  try { datos = JSON.parse(d.datos || '{}'); } catch(e){}
+  var h = '<div style="background:var(--blue-lt);border-radius:12px;padding:16px;margin-bottom:14px;">' +
+    '<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--grey-txt);margin-bottom:4px;">Módulo activo</div>' +
+    '<div style="font-size:20px;font-weight:700;color:var(--blue-dk);">' + d.modulo + '</div>' +
+    '<div style="font-size:13px;color:var(--grey-txt);margin-top:2px;">' + (d.paso||'') + '</div>' +
+    '</div>';
+  if (datos.sucursal) {
+    h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">';
+    h += '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:8px;padding:8px 14px;font-size:13px;"><span style="color:var(--grey-txt);">Sucursal: </span><strong>' + datos.sucursal + '</strong></div>';
+    if (datos.folio) h += '<div style="background:#fff;border:1px solid var(--grey-lt);border-radius:8px;padding:8px 14px;font-size:13px;font-family:monospace;font-weight:700;color:var(--blue);">' + datos.folio + '</div>';
+    h += '</div>';
+  }
+  if (datos.productos && datos.productos.length) {
+    h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    h += '<tr style="background:var(--blue-dkr);"><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:left;">Código</th><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:left;">Producto</th><th style="padding:7px 10px;color:rgba(255,255,255,.8);text-align:right;">Cantidad</th></tr>';
+    datos.productos.forEach(function(p, i) {
+      var qty = parseFloat(p.qty) || 0;
+      var col = qty > 0 ? '#2E9E6B' : '#D4504A';
+      h += '<tr style="background:' + (i%2===0?'#fff':'#f5f8fc') + '">' +
+        '<td style="padding:6px 10px;font-family:monospace;color:var(--blue);">' + (p.code||'') + '</td>' +
+        '<td style="padding:6px 10px;">' + (p.name||'') + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-weight:700;color:' + col + ';">' + (qty>0?qty:'—') + '</td></tr>';
+    });
+    h += '</table></div>';
+  }
+  wrap.innerHTML = h;
+}
+
+// ══ MÓDULO 8: PROMEDIOS DE SOLICITUD ══
+function promCargar(){
+  var suc=document.getElementById('prom-suc').value;
+  var desde=document.getElementById('prom-desde').value;
+  var hasta=document.getElementById('prom-hasta').value;
+  var res=document.getElementById('prom-resultado');
+  var load=document.getElementById('prom-loading');
+  if(!desde||!hasta){alert('Selecciona un período de fechas.');return;}
+  res.innerHTML='';load.style.display='block';
+  var url=SCRIPT_URL+'?tipo=historial_sdp';
+  if(suc) url+='&sucursal='+encodeURIComponent(suc);
+  if(desde) url+='&desde='+encodeURIComponent(desde);
+  if(hasta) url+='&hasta='+encodeURIComponent(hasta);
+  fetch(url).then(function(r){return r.json();}).then(function(data){
+    load.style.display='none';
+    if(!data||!data.length){res.innerHTML='<div style="text-align:center;padding:40px;color:var(--grey-txt);">Sin datos para el período.</div>';return;}
+    var evaluadas=data.filter(function(r){return r.estado==='EVALUADA';});
+    if(!evaluadas.length){res.innerHTML='<div style="text-align:center;padding:40px;color:var(--grey-txt);">No hay pedidos evaluados en este período.</div>';return;}
+    promRender(evaluadas,desde,hasta);
+  }).catch(function(){load.style.display='none';res.innerHTML='<div style="color:#D4504A;text-align:center;padding:20px;">Error al cargar.</div>';});
+}
+
+function promRender(data,desde,hasta){
+  var productos={};
+  var diasPeriodo=Math.max(1,(new Date(hasta)-new Date(desde))/(1000*60*60*24));
+  var semanas=Math.max(1,diasPeriodo/7);
+  var meses=Math.max(1,diasPeriodo/30);
+  data.forEach(function(sdp){
+    if(!sdp.productos)return;
+    sdp.productos.split('\n').forEach(function(line){
+      var p=line.split('|');
+      if(p.length<5)return;
+      var code=p[0].trim(),nombre=p[1].trim(),pres=p[2]?p[2].trim():'';
+      var qty=parseFloat(String(p[4]||'0').replace('x',''))||0;
+      if(!code||qty===0)return;
+      if(!productos[code])productos[code]={nombre:nombre,pres:pres,qtys:[],sucursales:{}};
+      productos[code].qtys.push(qty);
+      productos[code].sucursales[sdp.sucursal]=(productos[code].sucursales[sdp.sucursal]||0)+qty;
+    });
+  });
+  var codes=Object.keys(productos).sort(function(a,b){
+    return productos[b].qtys.reduce(function(s,v){return s+v;},0)-productos[a].qtys.reduce(function(s,v){return s+v;},0);
+  });
+  if(!codes.length){document.getElementById('prom-resultado').innerHTML='<div style="text-align:center;padding:40px;color:var(--grey-txt);">Sin productos encontrados.</div>';return;}
+  var h='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+  h+='<thead><tr style="background:var(--blue-dkr);">';
+  ['#','Código','Producto','Presentación','Total','Prom/Semana','Prom/Mes','Mínimo','Máximo','Por Sucursal'].forEach(function(c){
+    h+='<th style="padding:8px 10px;color:rgba(255,255,255,.9);font-size:10px;white-space:nowrap;">'+c+'</th>';
+  });
+  h+='</tr></thead><tbody>';
+  codes.forEach(function(code,i){
+    var p=productos[code];
+    var total=p.qtys.reduce(function(s,v){return s+v;},0);
+    var min=Math.min.apply(null,p.qtys),max=Math.max.apply(null,p.qtys);
+    var sucStr=Object.keys(p.sucursales).map(function(s){
+      return '<span style="background:var(--blue-lt);color:var(--blue-dk);padding:1px 6px;border-radius:8px;font-size:9px;margin:1px;display:inline-block;">'+s+': '+p.sucursales[s].toFixed(1)+'</span>';
+    }).join('');
+    var bg=i%2===0?'#fff':'#F8FAFE';
+    h+='<tr style="background:'+bg+';border-top:1px solid var(--grey-lt);">';
+    h+='<td style="padding:7px 10px;color:var(--grey-txt);">'+(i+1)+'</td>';
+    h+='<td style="padding:7px 10px;font-family:monospace;font-size:11px;color:var(--blue);">'+code+'</td>';
+    h+='<td style="padding:7px 10px;font-weight:600;">'+p.nombre+'</td>';
+    h+='<td style="padding:7px 10px;font-size:11px;color:var(--grey-txt);">'+p.pres+'</td>';
+    h+='<td style="padding:7px 10px;font-weight:700;text-align:right;color:var(--blue-dk);">'+total.toFixed(2)+'</td>';
+    h+='<td style="padding:7px 10px;text-align:right;font-weight:600;">'+(total/semanas).toFixed(2)+'</td>';
+    h+='<td style="padding:7px 10px;text-align:right;font-weight:600;">'+(total/meses).toFixed(2)+'</td>';
+    h+='<td style="padding:7px 10px;text-align:right;color:#2E9E6B;font-weight:700;">'+min.toFixed(2)+'</td>';
+    h+='<td style="padding:7px 10px;text-align:right;color:#D4504A;font-weight:700;">'+max.toFixed(2)+'</td>';
+    h+='<td style="padding:7px 10px;">'+sucStr+'</td>';
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+  document.getElementById('prom-resultado').innerHTML=h;
+}
+
+function promDescargar(){
+  var res=document.getElementById('prom-resultado');
+  var suc=document.getElementById('prom-suc').value||'Todas';
+  var desde=document.getElementById('prom-desde').value||'';
+  var hasta=document.getElementById('prom-hasta').value||'';
+  if(!res||!res.innerHTML.trim()){alert('Primero analiza los datos.');return;}
+  var btn=document.getElementById('btn-prom-dl');
+  if(btn){btn.disabled=true;btn.textContent='⏳ Generando...';}
+  var container=document.createElement('div');
+  container.style.cssText='position:absolute;left:-9999px;top:0;width:1200px;background:#fff;padding:20px;font-family:Arial,sans-serif;font-size:10px;';
+  container.innerHTML='<h2 style="color:#1D4F73;margin-bottom:4px;">Luna Media Café — Promedios de Solicitud</h2>'+
+    '<div style="font-size:10px;color:#6B7E93;margin-bottom:12px;">Sucursal: <strong>'+suc+'</strong> | Período: <strong>'+desde+' — '+hasta+'</strong></div>'+
+    '<style>table{width:100%;border-collapse:collapse;}th{background:#1D4F73;color:white;padding:5px 8px;font-size:9px;}td{padding:4px 8px;border-bottom:1px solid #EEF2F7;font-size:10px;}tr:nth-child(even) td{background:#F8FAFE;}</style>'+
+    res.innerHTML;
+  document.body.appendChild(container);
+  html2canvas(container,{scale:2,useCORS:true,backgroundColor:'#ffffff'}).then(function(canvas){
+    var doc=new window.jspdf.jsPDF('l','mm','a4');
+    var imgW=297,pageH=210,srcY=0,page=0;
+    var imgH=canvas.height*imgW/canvas.width;
+    while(srcY<canvas.height){
+      var srcH=Math.min(canvas.height-srcY,Math.round(canvas.height*pageH/imgH));
+      var pc=document.createElement('canvas');
+      pc.width=canvas.width;pc.height=srcH;
+      pc.getContext('2d').drawImage(canvas,0,srcY,canvas.width,srcH,0,0,canvas.width,srcH);
+      if(page>0)doc.addPage();
+      doc.addImage(pc.toDataURL('image/jpeg',0.95),'JPEG',0,0,imgW,srcH*imgW/canvas.width);
+      srcY+=srcH;page++;
+    }
+    doc.save('Promedios_'+desde+'_'+hasta+'.pdf');
+    document.body.removeChild(container);
+    if(btn){btn.disabled=false;btn.textContent='⬇️ PDF';}
+  }).catch(function(e){console.error(e);document.body.removeChild(container);if(btn){btn.disabled=false;btn.textContent='⬇️ PDF';}});
+}
+
+</script>
+
+<!-- MOD4: HISTORIAL INVENTARIOS -->
+<div class="module" id="mod4">
+<div class="wrap">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div>
+        <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:4px;">Historial de Inventarios</h2>
+        <p style="font-size:13px;color:var(--grey-txt);">Registro permanente por sucursal. Solo lectura.</p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="histCargar()" style="background:var(--blue);color:#fff;padding:9px 18px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">&#8635; Actualizar</button>
+        <button id="btn-limpiar-hist" onclick="histLimpiar()" style="display:none;background:#D4504A;color:#fff;padding:9px 18px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">&#128465; Limpiar historial</button>
+      </div>
+    </div>
+    <!-- Tabs por sucursal -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:2px solid var(--grey-lt);padding-bottom:0;">
+      <div id="htab-all" onclick="histTab('all')" style="padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600;color:var(--blue);border-bottom:2px solid var(--blue);margin-bottom:-2px;">Todos</div>
+      <div id="htab-ac" onclick="histTab('Avila Camacho')" style="padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600;color:var(--grey-txt);">Avila Camacho</div>
+      <div id="htab-pj" onclick="histTab('Paseo Jardines')" style="padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600;color:var(--grey-txt);">Paseo Jardines</div>
+      <div id="htab-po" onclick="histTab('Postreria')" style="padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600;color:var(--grey-txt);">Postreria</div>
+    </div>
+    <div id="hist-loading" style="display:none;text-align:center;padding:30px;color:var(--grey-txt);">
+      <div style="width:32px;height:32px;border:3px solid var(--blue-lt);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 10px;"></div>
+      Cargando historial...
+    </div>
+    <div id="hist-list">
+      <div style="text-align:center;padding:40px;color:var(--grey-txt);">Da clic en Actualizar para cargar el historial.</div>
+    </div>
+  </div>
+</div>
+</div><!-- end mod4 -->
+
+
+<!-- MOD5: COMPRAS CONCILIADAS -->
+<div class="module" id="mod5">
+<div class="wrap">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+      <div>
+        <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:4px;">Compras Conciliadas</h2>
+        <p style="font-size:13px;color:var(--grey-txt);">Historial de SDP vs evaluaciones de entrega por periodo. SDP vencidas sin evaluar toman el monto original.</p>
+      </div>
+    </div>
+    <!-- Filtros -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:12px;margin-bottom:20px;align-items:end;flex-wrap:wrap;">
+      <div class="field"><label>Sucursal</label>
+        <div class="sel-wrap"><select id="conc-suc">
+          <option value="">Todas</option>
+          <option value="ÁVILA CAMACHO">Ávila Camacho</option>
+          <option value="PASEO JARDINES">Paseo Jardines</option>
+          <option value="POSTRERÍA">Postrería</option>
+          <option value="CDP">Calidad y Desarrollo</option>
+        </select></div>
+      </div>
+      <div class="field"><label>Desde</label><input type="date" id="conc-desde"></div>
+      <div class="field"><label>Hasta</label><input type="date" id="conc-hasta"></div>
+      <div class="field"><label>Estado</label>
+        <div class="sel-wrap"><select id="conc-estado-filtro">
+          <option value="">Todos</option>
+          <option value="EVALUADA">Evaluadas</option>
+          <option value="VENCIDA">Vencidas</option>
+          <option value="PENDIENTE">Pendientes</option>
+          <option value="CANCELADA">Canceladas</option>
+          <option value="TRANSFERENCIA-EMISORA">Transferencias (Egreso)</option>
+          <option value="TRANSFERENCIA-RECEPTORA">Transferencias (Ingreso)</option>
+        </select></div>
+      </div>
+      <button onclick="conciliacionCargar()" style="background:var(--blue);color:#fff;padding:9px 18px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">Buscar</button>
+      <button onclick="concDescarga()" style="background:#2E9E6B;color:#fff;padding:9px 16px;border-radius:9px;border:none;font-weight:700;font-size:13px;cursor:pointer;margin-left:8px;">⬇️ Descargar</button>
+    </div>
+    <!-- Resumen tarjetas -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;" id="conc-resumen-cards">
+      <div style="background:var(--blue-lt);border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--grey-txt);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Total pedidos</div>
+        <div style="font-size:22px;font-weight:700;color:var(--blue-dk);" id="conc-total-ped">—</div>
+      </div>
+      <div style="background:#E8F7F1;border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--grey-txt);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Monto total periodo</div>
+        <div style="font-size:22px;font-weight:700;color:#2E9E6B;" id="conc-monto-total">—</div>
+      </div>
+      <div style="background:#FEF3E8;border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--grey-txt);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Monto real recibido</div>
+        <div style="font-size:22px;font-weight:700;color:#E07B2A;" id="conc-monto-real">—</div>
+      </div>
+      <div style="background:#FDECEA;border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--grey-txt);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Diferencia</div>
+        <div style="font-size:22px;font-weight:700;color:#D4504A;" id="conc-diferencia">—</div>
+      </div>
+    </div>
+    <div id="conc-tabla"></div>
+    <!-- Modal cancelar SDP -->
+    <div id="modal-cancelar" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9000;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:16px;padding:28px;width:100%;max-width:480px;margin:20px;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+        <h3 style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:#D4504A;margin-bottom:6px;">Cancelar SDP</h3>
+        <p style="font-size:13px;color:var(--grey-txt);margin-bottom:16px;">Esta accion no se puede deshacer. La SDP quedara marcada como CANCELADA y se notificara a todos.</p>
+        <div style="background:#FDECEA;border-radius:10px;padding:12px 14px;margin-bottom:16px;">
+          <div id="modal-cancel-folio" style="font-size:16px;font-weight:700;color:#D4504A;font-family:monospace;"></div>
+          <div id="modal-cancel-suc" style="font-size:13px;color:var(--grey-txt);margin-top:2px;"></div>
+        </div>
+        <div class="field" style="margin-bottom:16px;">
+          <label>Motivo de cancelacion <span style="color:#D4504A;">*</span></label>
+          <div class="sel-wrap"><select id="cancel-motivo">
+            <option value="">Selecciona motivo...</option>
+            <option value="Pedido de prueba">Pedido de prueba</option>
+            <option value="Error en productos">Error en productos solicitados</option>
+            <option value="Error en cantidades">Error en cantidades</option>
+            <option value="Pedido duplicado">Pedido duplicado</option>
+            <option value="Cambio de fecha">Cambio de fecha de entrega</option>
+            <option value="Otro">Otro</option>
+          </select></div>
+        </div>
+        <div class="field" style="margin-bottom:20px;">
+          <label>Observaciones adicionales</label>
+          <input type="text" id="cancel-obs" placeholder="Detalle adicional (opcional)" style="width:100%;">
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;">
+          <button onclick="document.getElementById('modal-cancelar').style.display='none'" style="background:var(--grey-lt);color:var(--dark);padding:9px 20px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer;">Cancelar</button>
+          <button onclick="conciliacionCancelarConfirmar()" style="background:#D4504A;color:#fff;padding:9px 20px;border-radius:9px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">Confirmar cancelacion</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ESPEJO: Vista solo lectura -->
+<div id="espejo-vista" style="display:none;padding:24px;">
+  <div style="max-width:900px;margin:0 auto;">
+    <div id="espejo-contenido">
+      <div style="text-align:center;padding:60px;color:var(--grey-txt);">Cargando...</div>
+    </div>
+  </div>
+</div>
+
+<!-- MOD7: HISTORIAL SDP -->
+<div class="module" id="mod7">
+<div class="wrap">
+  <div class="card">
+    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--blue);margin-bottom:4px;">Historial</p>
+    <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:16px;">Historial de Solicitudes de Pedido</h2>
+    <!-- Filtros -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:10px;align-items:end;margin-bottom:14px;flex-wrap:wrap;">
+      <div class="field">
+        <label>Sucursal</label>
+        <div class="sel-wrap"><select id="hsdp-suc">
+          <option value="">Todas</option>
+          <option value="ÁVILA CAMACHO">Ávila Camacho</option>
+          <option value="PASEO JARDINES">Paseo Jardines</option>
+          <option value="POSTRERÍA">Postrería</option>
+          <option value="CDP">Calidad y Desarrollo</option>
+        </select></div>
+      </div>
+      <div class="field">
+        <label>Desde</label>
+        <input type="date" id="hsdp-desde">
+      </div>
+      <div class="field">
+        <label>Hasta</label>
+        <input type="date" id="hsdp-hasta">
+      </div>
+      <div class="field">
+        <label>Estado</label>
+        <div class="sel-wrap"><select id="hsdp-estado">
+          <option value="">Todos</option>
+          <option value="PENDIENTE">Pendiente</option>
+          <option value="EVALUADA">Evaluada</option>
+          <option value="VENCIDA">Vencida</option>
+          <option value="CANCELADA">Cancelada</option>
+          <option value="TRANSFERENCIA-EMISORA">🔄 Transferencia Egreso</option>
+          <option value="TRANSFERENCIA-RECEPTORA">🔄 Transferencia Ingreso</option>
+          <option value="EN_RUTA">🚚 En Ruta</option>
+        </select></div>
+      </div>
+      <button onclick="histSdpCargar()" style="background:var(--blue);color:#fff;border:none;border-radius:9px;padding:10px 18px;font-weight:700;cursor:pointer;">🔍 Buscar</button>
+    </div>
+    <div id="hsdp-lista"><div style="text-align:center;padding:30px;color:var(--grey-txt);">Cargando...</div></div>
+  </div>
+</div>
+</div>
+
+
+<!-- MOD8: PROMEDIOS DE SOLICITUD -->
+<div class="module" id="mod8">
+<div class="wrap">
+  <div class="card">
+    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--blue);margin-bottom:4px;">Análisis</p>
+    <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:16px;">Promedios de Solicitud por Insumo</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;margin-bottom:14px;">
+      <div class="field">
+        <label>Sucursal</label>
+        <div class="sel-wrap"><select id="prom-suc">
+          <option value="">Todas</option>
+          <option value="ÁVILA CAMACHO">Ávila Camacho</option>
+          <option value="PASEO JARDINES">Paseo Jardines</option>
+          <option value="POSTRERÍA">Postrería</option>
+          <option value="CDP">Calidad y Desarrollo</option>
+        </select></div>
+      </div>
+      <div class="field">
+        <label>Desde</label>
+        <input type="date" id="prom-desde">
+      </div>
+      <div class="field">
+        <label>Hasta</label>
+        <input type="date" id="prom-hasta">
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="promCargar()" style="background:var(--blue);color:#fff;border:none;border-radius:9px;padding:10px 18px;font-weight:700;cursor:pointer;">🔍 Analizar</button>
+        <button onclick="promDescargar()" id="btn-prom-dl" style="background:#2E9E6B;color:#fff;border:none;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer;">⬇️ PDF</button>
+      </div>
+    </div>
+    <div id="prom-loading" style="display:none;text-align:center;padding:30px;color:var(--grey-txt);">Analizando datos...</div>
+    <div id="prom-resultado"></div>
+  </div>
+</div>
+</div>
+
+</div><!-- end app-root -->
+<!-- MODAL: TRANSFERENCIAS INTERNAS -->
+<div id="modal-transferencia" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9100;overflow-y:auto;">
+  <div style="background:#fff;border-radius:16px;padding:0;width:100%;max-width:700px;margin:20px auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,#1D4F73,#3C8EC8);padding:20px 24px;border-radius:16px 16px 0 0;display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <div style="color:rgba(255,255,255,.7);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;">Luna Media Café</div>
+        <div style="color:#fff;font-size:20px;font-weight:700;">🔄 Transferencia entre Sucursales</div>
+      </div>
+      <button onclick="cerrarTransferencia()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:600;">✕ Cerrar</button>
+    </div>
+    <div style="padding:24px;" id="trans-body">
+      <!-- Step 1: Select emisora/receptora -->
+      <div id="trans-step1">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+          <div class="field">
+            <label>Sucursal emisora <span style="color:#D4504A;">*</span></label>
+            <div class="sel-wrap"><select id="trans-emisora" onchange="transCargarInventario()">
+              <option value="">Selecciona...</option>
+              <option value="Ávila Camacho">Ávila Camacho</option>
+              <option value="Paseo Jardines">Paseo Jardines</option>
+              <option value="Postrería">Postrería</option>
+              <option value="CDP">CDP - Calidad y Desarrollo</option>
+              <option value="CEDIS">CEDIS</option>
+            </select></div>
+          </div>
+          <div class="field">
+            <label>Sucursal receptora <span style="color:#D4504A;">*</span></label>
+            <div class="sel-wrap"><select id="trans-receptora">
+              <option value="">Selecciona...</option>
+              <option value="Ávila Camacho">Ávila Camacho</option>
+              <option value="Paseo Jardines">Paseo Jardines</option>
+              <option value="Postrería">Postrería</option>
+              <option value="CDP">CDP - Calidad y Desarrollo</option>
+              <option value="CEDIS">CEDIS</option>
+            </select></div>
+          </div>
+        </div>
+        <div id="trans-inventario-wrap" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <div style="font-size:13px;font-weight:600;color:var(--dark);">Productos disponibles en inventario</div>
+            <div style="font-size:12px;color:var(--grey-txt);">Solo productos con existencia &gt; 0</div>
+          </div>
+          <div style="max-height:320px;overflow-y:auto;border:1px solid var(--grey-lt);border-radius:10px;" id="trans-prod-lista"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding:12px 16px;background:var(--blue-lt);border-radius:10px;">
+            <div style="font-size:13px;font-weight:600;color:var(--dark);">Total transferencia</div>
+            <div style="font-size:20px;font-weight:700;color:var(--blue-dk);" id="trans-total">$0.00</div>
+          </div>
+          <div class="field" style="margin-top:14px;">
+            <label>Observaciones</label>
+            <input type="text" id="trans-obs" placeholder="Motivo o nota de la transferencia (opcional)" style="width:100%;">
+          </div>
+          <button onclick="transEnviar()" style="width:100%;margin-top:16px;background:linear-gradient(135deg,#1D4F73,#3C8EC8);color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:700;cursor:pointer;">Enviar Transferencia</button>
+        </div>
+        <div id="trans-loading" style="display:none;text-align:center;padding:30px;color:var(--grey-txt);">
+          <div style="width:32px;height:32px;border:3px solid #E0E8F0;border-top-color:#3C8EC8;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px;"></div>
+          Cargando inventario...
+        </div>
+      </div>
+      <!-- Success screen -->
+      <div id="trans-ok" style="display:none;text-align:center;padding:40px 20px;">
+        <div style="font-size:56px;margin-bottom:16px;">✅</div>
+        <div style="font-size:20px;font-weight:700;color:var(--dark);margin-bottom:8px;">Transferencia enviada</div>
+        <div style="font-size:14px;color:var(--grey-txt);margin-bottom:8px;">Folio: <span id="trans-folio-ok" style="font-family:monospace;font-weight:700;color:var(--blue);"></span></div>
+        <div style="font-size:13px;color:var(--grey-txt);">Se enviaron notificaciones a ambas sucursales, Admin y CEDIS.</div>
+        <button onclick="cerrarTransferencia()" style="margin-top:20px;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="inv-autosave-ind" style="position:fixed;bottom:20px;right:20px;background:rgba(46,158,107,.95);color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;z-index:99999;opacity:0;transition:opacity .6s;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.2);"></div>
+</body>
 </html>

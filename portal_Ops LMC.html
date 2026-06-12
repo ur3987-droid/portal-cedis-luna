@@ -232,70 +232,7 @@ textarea{resize:vertical;min-height:72px;line-height:1.6;}
 .ev-bhdr span{font-family:"Bebas Neue",sans-serif;color:#fff;font-size:15px;letter-spacing:.08em;}
 
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js">
-function sesionVerificar(email, onEspejo, onNormal) {
-  var tabId = getTabId();
-  fetch(SCRIPT_URL + '?tipo=sesion_check&email=' + encodeURIComponent(email) + '&tabId=' + encodeURIComponent(tabId))
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      if (d && d.activa) {
-        onEspejo(); // hay sesión de otro tab → modo espejo
-      } else {
-        onNormal(); // no hay sesión → modo normal, registrar
-      }
-    })
-    .catch(function() { onNormal(); }); // si falla, entrar normal
-}
-
-// Publicar estado actual al espejo (lo llaman las funciones del portal)
-function espejoPublicar(modulo, paso, datos) {
-  if (sesionEspejo || !sesionActual) return;
-  var body = new URLSearchParams();
-  body.append('tipo',   'espejo_pub');
-  body.append('email',  sesionActual.email);
-  body.append('modulo', modulo);
-  body.append('paso',   paso);
-  body.append('datos',  JSON.stringify(datos || {}));
-  fetch(SCRIPT_URL, { method:'POST', body: body }).catch(function(){});
-}
-
-// ── Modo espejo: polling y render ──
-function espejoIniciar() {
-  sesionEspejo = true;
-  // Banner fijo
-  var banner = document.createElement('div');
-  banner.id = 'espejo-banner';
-  banner.innerHTML = '<span style="font-size:14px;">👁 Modo solo lectura — Sesión espejo activa</span>' +
-    '<span id="espejo-ts" style="font-size:11px;opacity:.7;margin-left:12px;"></span>';
-  banner.style.cssText = 'position:fixed;top:0;left:0;width:100%;background:#1D4F73;color:#fff;padding:10px 20px;z-index:99999;display:flex;align-items:center;justify-content:space-between;font-family:DM Sans,sans-serif;font-weight:600;';
-  document.body.prepend(banner);
-  document.getElementById('app-root').style.marginTop = '44px';
-  // Bloquear interacción
-  document.addEventListener('click',   function(e){ if(e.target.closest('button,input,select,textarea,a')) { e.preventDefault(); e.stopPropagation(); } }, true);
-  document.addEventListener('keydown', function(e){ e.preventDefault(); }, true);
-  // Ocultar todas las pestañas y mostrar vista espejo
-  document.querySelectorAll('.ntab').forEach(function(t){ t.style.display='none'; });
-  document.querySelectorAll('.module').forEach(function(m){ m.classList.remove('active'); });
-  var ev = document.getElementById('espejo-contenido');
-  if (ev) ev.parentElement.style.display = 'block';
-  // Polling cada 5 segundos
-  espejoPolling();
-  espejoInterval = setInterval(espejoPolling, 5000);
-}
-
-function espejoPolling() {
-  if (!sesionActual) return;
-  fetch(SCRIPT_URL + '?tipo=espejo_get&email=' + encodeURIComponent(sesionActual.email))
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      var ts = document.getElementById('espejo-ts');
-      if (ts) ts.textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-      espejoRender(d);
-    }).catch(function(){});
-}
-
-
-</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 
@@ -867,192 +804,6 @@ function espejoPolling() {
   </div>
 </div>
 </div><!-- end mod3 -->
-
-<!-- MOD4: TRANSFERENCIAS -->
-<div class="module" id="mod4">
-<div class="wrap">
-  <div class="card">
-    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--blue);margin-bottom:4px;">Operaciones</p>
-    <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:16px;">Transferencia entre Sucursales</h2>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
-      <div class="field">
-        <label>Sucursal emisora <span style="color:#D4504A;">*</span></label>
-        <div class="sel-wrap"><select id="trans-emisora">
-          <option value="">Selecciona...</option>
-          <option value="Ávila Camacho">Ávila Camacho</option>
-          <option value="Paseo Jardines">Paseo Jardines</option>
-          <option value="Postrería">Postrería</option>
-          <option value="CDP">CDP - Calidad y Desarrollo</option>
-          <option value="CEDIS">CEDIS</option>
-        </select></div>
-      </div>
-      <div class="field">
-        <label>Sucursal receptora <span style="color:#D4504A;">*</span></label>
-        <div class="sel-wrap"><select id="trans-receptora">
-          <option value="">Selecciona...</option>
-          <option value="Ávila Camacho">Ávila Camacho</option>
-          <option value="Paseo Jardines">Paseo Jardines</option>
-          <option value="Postrería">Postrería</option>
-          <option value="CDP">CDP - Calidad y Desarrollo</option>
-          <option value="CEDIS">CEDIS</option>
-        </select></div>
-      </div>
-    </div>
-    <div class="field">
-      <label>Observaciones</label>
-      <textarea id="trans-obs" placeholder="Motivo de la transferencia..."></textarea>
-    </div>
-    <div id="trans-catalog" style="margin-top:16px;"></div>
-    <div style="display:flex;justify-content:flex-end;margin-top:20px;">
-      <button class="btn-primary" onclick="transSubmit()">Registrar Transferencia</button>
-    </div>
-  </div>
-</div>
-</div><!-- end mod4 -->
-
-<!-- MOD5: COMPRAS CONCILIADAS -->
-<div class="module" id="mod5">
-<div class="wrap">
-  <div class="card">
-    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--blue);margin-bottom:4px;">Finanzas</p>
-    <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:16px;">Compras Conciliadas</h2>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end;">
-      <div class="field" style="flex:1;min-width:150px;">
-        <label>Sucursal</label>
-        <div class="sel-wrap"><select id="conc-suc">
-          <option value="">Todas</option>
-          <option value="ÁVILA CAMACHO">Ávila Camacho</option>
-          <option value="PASEO JARDINES">Paseo Jardines</option>
-          <option value="POSTRERÍA">Postrería</option>
-          <option value="CDP">Calidad y Desarrollo</option>
-        </select></div>
-      </div>
-      <div class="field" style="flex:1;min-width:130px;">
-        <label>Estado</label>
-        <div class="sel-wrap"><select id="conc-estado-filtro">
-          <option value="">Todos</option>
-          <option value="EVALUADA">Evaluada</option>
-          <option value="PENDIENTE">Pendiente</option>
-          <option value="CANCELADA">Cancelada</option>
-          <option value="VENCIDA">Vencida</option>
-        </select></div>
-      </div>
-      <div class="field" style="flex:1;min-width:130px;">
-        <label>Desde</label>
-        <input type="date" id="conc-desde">
-      </div>
-      <div class="field" style="flex:1;min-width:130px;">
-        <label>Hasta</label>
-        <input type="date" id="conc-hasta">
-      </div>
-      <div style="display:flex;gap:8px;">
-        <button onclick="conciliacionCargar()" style="background:var(--blue);color:#fff;padding:9px 18px;border-radius:9px;border:none;font-weight:700;font-size:13px;cursor:pointer;">🔍 Buscar</button>
-        <button onclick="concDescarga()" style="background:#2E9E6B;color:#fff;padding:9px 16px;border-radius:9px;border:none;font-weight:700;font-size:13px;cursor:pointer;">⬇️ Descargar</button>
-      </div>
-    </div>
-    <div id="conc-resumen" style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;"></div>
-    <div id="conc-tabla"><div style="text-align:center;padding:40px;color:var(--grey-txt);">Selecciona filtros y da clic en Buscar.</div></div>
-  </div>
-</div>
-</div><!-- end mod5 -->
-
-<!-- MOD6: HISTORIAL INVENTARIOS -->
-<div class="module" id="mod6">
-<div class="wrap">
-  <div class="card">
-    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--blue);margin-bottom:4px;">Inventarios</p>
-    <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:16px;">Historial de Inventarios</h2>
-    <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap;">
-      <button onclick="histTab('all')" id="htab-all" style="padding:7px 16px;border-radius:20px;border:1.5px solid var(--blue);background:var(--blue);color:#fff;font-weight:700;font-size:12px;cursor:pointer;">Todos</button>
-      <button onclick="histTab('ac')" id="htab-ac" style="padding:7px 16px;border-radius:20px;border:1.5px solid var(--grey-mid);background:#fff;color:var(--grey-txt);font-size:12px;cursor:pointer;">Ávila Camacho</button>
-      <button onclick="histTab('pj')" id="htab-pj" style="padding:7px 16px;border-radius:20px;border:1.5px solid var(--grey-mid);background:#fff;color:var(--grey-txt);font-size:12px;cursor:pointer;">Paseo Jardines</button>
-      <button onclick="histTab('po')" id="htab-po" style="padding:7px 16px;border-radius:20px;border:1.5px solid var(--grey-mid);background:#fff;color:var(--grey-txt);font-size:12px;cursor:pointer;">Postrería</button>
-    </div>
-    <div id="hist-loading" style="display:none;text-align:center;padding:30px;color:var(--grey-txt);">Cargando historial...</div>
-    <div id="hist-list"></div>
-  </div>
-</div>
-</div><!-- end mod6 -->
-
-<!-- MOD7: HISTORIAL SDP -->
-<div class="module" id="mod7">
-<div class="wrap">
-  <div class="card">
-    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--blue);margin-bottom:4px;">Pedidos</p>
-    <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:16px;">Historial SDP</h2>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end;">
-      <div class="field" style="flex:1;min-width:150px;">
-        <label>Sucursal</label>
-        <div class="sel-wrap"><select id="hsdp-suc">
-          <option value="">Todas</option>
-          <option value="ÁVILA CAMACHO">Ávila Camacho</option>
-          <option value="PASEO JARDINES">Paseo Jardines</option>
-          <option value="POSTRERÍA">Postrería</option>
-          <option value="CDP">Calidad y Desarrollo</option>
-        </select></div>
-      </div>
-      <div class="field" style="flex:1;min-width:130px;">
-        <label>Estado</label>
-        <div class="sel-wrap"><select id="hsdp-estado">
-          <option value="">Todos</option>
-          <option value="EVALUADA">Evaluada</option>
-          <option value="PENDIENTE">Pendiente</option>
-          <option value="CANCELADA">Cancelada</option>
-          <option value="VENCIDA">Vencida</option>
-        </select></div>
-      </div>
-      <div class="field" style="flex:1;min-width:130px;">
-        <label>Desde</label>
-        <input type="date" id="hsdp-desde">
-      </div>
-      <div class="field" style="flex:1;min-width:130px;">
-        <label>Hasta</label>
-        <input type="date" id="hsdp-hasta">
-      </div>
-      <button onclick="histSdpCargar()" style="background:var(--blue);color:#fff;padding:9px 18px;border-radius:9px;border:none;font-weight:700;font-size:13px;cursor:pointer;">🔍 Buscar</button>
-    </div>
-    <div id="hsdp-loading" style="display:none;text-align:center;padding:30px;color:var(--grey-txt);">Cargando...</div>
-    <div id="hsdp-lista"></div>
-  </div>
-</div>
-</div><!-- end mod7 -->
-
-<!-- MOD8: PROMEDIOS -->
-<div class="module" id="mod8">
-<div class="wrap">
-  <div class="card">
-    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--blue);margin-bottom:4px;">Análisis</p>
-    <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:16px;">Promedios de Solicitud por Insumo</h2>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;margin-bottom:14px;">
-      <div class="field">
-        <label>Sucursal</label>
-        <div class="sel-wrap"><select id="prom-suc">
-          <option value="">Todas</option>
-          <option value="ÁVILA CAMACHO">Ávila Camacho</option>
-          <option value="PASEO JARDINES">Paseo Jardines</option>
-          <option value="POSTRERÍA">Postrería</option>
-          <option value="CDP">Calidad y Desarrollo</option>
-        </select></div>
-      </div>
-      <div class="field">
-        <label>Desde</label>
-        <input type="date" id="prom-desde">
-      </div>
-      <div class="field">
-        <label>Hasta</label>
-        <input type="date" id="prom-hasta">
-      </div>
-      <div style="display:flex;gap:8px;">
-        <button onclick="promCargar()" style="background:var(--blue);color:#fff;border:none;border-radius:9px;padding:10px 18px;font-weight:700;cursor:pointer;">🔍 Analizar</button>
-        <button onclick="promDescargar()" id="btn-prom-dl" style="background:#2E9E6B;color:#fff;border:none;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer;">⬇️ PDF</button>
-      </div>
-    </div>
-    <div id="prom-loading" style="display:none;text-align:center;padding:30px;color:var(--grey-txt);">Analizando datos...</div>
-    <div id="prom-resultado"></div>
-  </div>
-</div>
-</div><!-- end mod8 -->
-
 
 
 <script>
@@ -1858,10 +1609,11 @@ function showMod(n){
     if(modEl) modEl.classList.add('active');
     if(tabEl) tabEl.classList.add('active');
     window.scrollTo({top:0,behavior:'smooth'});
-    if(n===6) histCargar();
+    if(n===4) histCargar();
     if(n===5) conciliacionCargar();
     if(n===7) histSdpCargar();
-    if(n===8) promCargar();
+  if(n===8) promCargar();
+    espejoPublicar('Módulo '+n,'abierto',{});
     var btnTr=document.getElementById('btn-transferencias');
     if(btnTr) btnTr.style.display='block';
   } catch(ex){ console.error('showMod error:',ex); }
@@ -3758,36 +3510,54 @@ function generarReporte(){
 }
 
 function concDescarga(){
-  var btn2 = document.querySelector('[onclick="concDescarga()"]');
-  if(btn2){btn2.disabled=true; btn2.textContent='⏳ Generando...';}
-  var suc   = document.getElementById('conc-suc') ? document.getElementById('conc-suc').value : 'Todas';
-  var desde = document.getElementById('conc-desde') ? document.getElementById('conc-desde').value : '';
-  var hasta = document.getElementById('conc-hasta') ? document.getElementById('conc-hasta').value : '';
-  var periodo = (desde||hasta) ? (desde + (hasta?' — '+hasta:'')) : 'Periodo completo';
-  var tableEl = document.querySelector('#conc-tabla table');
-  var tableHTML = tableEl ? tableEl.outerHTML : '<p>Sin datos</p>';
-  var container = document.createElement('div');
-  container.style.cssText = 'position:absolute;left:-9999px;top:0;width:1100px;background:#fff;padding:24px;font-family:Arial,sans-serif;font-size:11px;';
-  container.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #1D4F73;padding-bottom:10px;margin-bottom:14px;"><div><div style="font-size:22px;font-weight:700;color:#1D4F73;">Luna Media Café</div><div style="font-size:11px;color:#6B7E93;text-transform:uppercase;letter-spacing:1px;">Compras Conciliadas</div></div><div style="text-align:right;font-size:11px;color:#6B7E93;">Sucursal: <strong style="color:#182533;">'+suc+'</strong><br>Período: <strong style="color:#182533;">'+periodo+'</strong><br>'+new Date().toLocaleString('es-MX',{hour12:false})+'</div></div><style>table{width:100%;border-collapse:collapse;}th{background:#1D4F73;color:white;padding:5px 8px;font-size:9px;text-align:left;}td{padding:4px 8px;border-bottom:1px solid #EEF2F7;font-size:10px;}tr:nth-child(even) td{background:#F8FAFE;}</style>'+tableHTML;
-  document.body.appendChild(container);
-  html2canvas(container,{scale:2,useCORS:true,backgroundColor:'#ffffff'}).then(function(canvas){
-    var doc=new window.jspdf.jsPDF('l','mm','a4');
-    var imgW=297,pageH=210,srcY=0,page=0;
-    var imgH=canvas.height*imgW/canvas.width;
-    while(srcY<canvas.height){
-      var srcH=Math.min(canvas.height-srcY,Math.round(canvas.height*pageH/imgH));
-      var pc=document.createElement('canvas');
-      pc.width=canvas.width;pc.height=srcH;
-      pc.getContext('2d').drawImage(canvas,0,srcY,canvas.width,srcH,0,0,canvas.width,srcH);
-      if(page>0)doc.addPage();
-      doc.addImage(pc.toDataURL('image/jpeg',0.95),'JPEG',0,0,imgW,srcH*imgW/canvas.width);
-      srcY+=srcH;page++;
-    }
-    doc.save('Compras_Conciliadas_'+new Date().toISOString().split('T')[0]+'.pdf');
-    document.body.removeChild(container);
-    if(btn2){btn2.disabled=false;btn2.textContent='⬇️ Descargar';}
-  }).catch(function(e){console.error(e);document.body.removeChild(container);if(btn2){btn2.disabled=false;btn2.textContent='⬇️ Descargar';}});
-}
-</script>
-</body>
+  // Build printable HTML from current concRender data
+  var tabla = document.getElementById('conc-tabla');
+  if(!tabla){ alert('No hay datos para descargar.'); return; }
+  var suc   = document.getElementById('conc-suc').value || 'Todas las sucursales';
+  var desde = document.getElementById('conc-desde').value || '';
+  var hasta = document.getElementById('conc-hasta').value || '';
+  var estado= document.getElementById('conc-estado-filtro').value || 'Todos';
+  var periodo = (desde || hasta) ? (desde + (hasta?' — '+hasta:'')) : 'Periodo completo';
+
+  var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+    '<style>' +
+    'body{font-family:Arial,sans-serif;font-size:11px;color:#182533;margin:20px;}' +
+    'h1{font-size:18px;color:#1D4F73;margin-bottom:4px;}' +
+    '.sub{font-size:11px;color:#6B7E93;margin-bottom:16px;}' +
+    'table{width:100%;border-collapse:collapse;}' +
+    'th{background:#1D4F73;color:white;padding:6px 8px;text-align:left;font-size:10px;}' +
+    'td{padding:5px 8px;border-bottom:1px solid #EEF2F7;font-size:11px;}' +
+    'tr:nth-child(even) td{background:#F8FAFE;}' +
+    '.totales{margin-top:16px;background:#EBF4FB;border-radius:8px;padding:12px;display:flex;gap:32px;}' +
+    '.tot-item{text-align:center;}' +
+    '.tot-val{font-size:16px;font-weight:700;color:#1D4F73;}' +
+    '.tot-lbl{font-size:9px;text-transform:uppercase;color:#6B7E93;}' +
+    '.footer{margin-top:20px;font-size:9px;color:#9BADBF;text-align:center;border-top:1px solid #EEF2F7;padding-top:8px;}' +
+    '@media print{body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;} @page{margin:12mm;size:A4 landscape;}}' +
+    '</style></head><body>';
+
+  html += '<h1>Luna Media Café — Compras Conciliadas</h1>';
+  html += '<div class="sub">Sucursal: <strong>' + suc + '</strong> &nbsp;|&nbsp; Período: <strong>' + periodo + '</strong> &nbsp;|&nbsp; Estado: <strong>' + estado + '</strong></div>';
+
+  // Get table HTML from portal - extract thead and tbody
+  var tableEl = tabla.querySelector('table');
+  if(!tableEl){ alert('No hay tabla para descargar.'); return; }
+  html += tableEl.outerHTML;
+
+  // Get totales
+  var tp = document.getElementById('conc-total-ped');
+  var tm = document.getElementById('conc-monto-total');
+  var tr = document.getElementById('conc-monto-real');
+  var td = document.getElementById('conc-diferencia');
+  if(tp){
+    html += '<div class="totales">';
+    html += '<div class="tot-item"><div class="tot-val">' + (tp.textContent||'0') + '</div><div class="tot-lbl">Pedidos</div></div>';
+    html += '<div class="tot-item"><div class="tot-val">' + (tm?tm.textContent:'') + '</div><div class="tot-lbl">Total Estimado</div></div>';
+    html += '<div class="tot-item"><div class="tot-val">' + (tr?tr.textContent:'') + '</div><div class="tot-lbl">Total Real</div></div>';
+    html += '<div class="tot-item"><div class="tot-val">' + (td?td.textContent:'') + '</div><div class="tot-lbl">Diferencia</div></div>';
+    html += '</div>';
+  }
+
+  html += '<div class="footer">Luna Media Café &nbsp;·&nbsp; Generado el ' + new Date().toLocaleString('es-MX',{hour12:false}) + '</div>';
+  html += '</body>
 </html>

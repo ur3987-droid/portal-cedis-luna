@@ -868,6 +868,192 @@ function espejoPolling() {
 </div>
 </div><!-- end mod3 -->
 
+<!-- MOD4: TRANSFERENCIAS -->
+<div class="module" id="mod4">
+<div class="wrap">
+  <div class="card">
+    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--blue);margin-bottom:4px;">Operaciones</p>
+    <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:16px;">Transferencia entre Sucursales</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+      <div class="field">
+        <label>Sucursal emisora <span style="color:#D4504A;">*</span></label>
+        <div class="sel-wrap"><select id="trans-emisora">
+          <option value="">Selecciona...</option>
+          <option value="Ávila Camacho">Ávila Camacho</option>
+          <option value="Paseo Jardines">Paseo Jardines</option>
+          <option value="Postrería">Postrería</option>
+          <option value="CDP">CDP - Calidad y Desarrollo</option>
+          <option value="CEDIS">CEDIS</option>
+        </select></div>
+      </div>
+      <div class="field">
+        <label>Sucursal receptora <span style="color:#D4504A;">*</span></label>
+        <div class="sel-wrap"><select id="trans-receptora">
+          <option value="">Selecciona...</option>
+          <option value="Ávila Camacho">Ávila Camacho</option>
+          <option value="Paseo Jardines">Paseo Jardines</option>
+          <option value="Postrería">Postrería</option>
+          <option value="CDP">CDP - Calidad y Desarrollo</option>
+          <option value="CEDIS">CEDIS</option>
+        </select></div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Observaciones</label>
+      <textarea id="trans-obs" placeholder="Motivo de la transferencia..."></textarea>
+    </div>
+    <div id="trans-catalog" style="margin-top:16px;"></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:20px;">
+      <button class="btn-primary" onclick="transSubmit()">Registrar Transferencia</button>
+    </div>
+  </div>
+</div>
+</div><!-- end mod4 -->
+
+<!-- MOD5: COMPRAS CONCILIADAS -->
+<div class="module" id="mod5">
+<div class="wrap">
+  <div class="card">
+    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--blue);margin-bottom:4px;">Finanzas</p>
+    <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:16px;">Compras Conciliadas</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end;">
+      <div class="field" style="flex:1;min-width:150px;">
+        <label>Sucursal</label>
+        <div class="sel-wrap"><select id="conc-suc">
+          <option value="">Todas</option>
+          <option value="ÁVILA CAMACHO">Ávila Camacho</option>
+          <option value="PASEO JARDINES">Paseo Jardines</option>
+          <option value="POSTRERÍA">Postrería</option>
+          <option value="CDP">Calidad y Desarrollo</option>
+        </select></div>
+      </div>
+      <div class="field" style="flex:1;min-width:130px;">
+        <label>Estado</label>
+        <div class="sel-wrap"><select id="conc-estado-filtro">
+          <option value="">Todos</option>
+          <option value="EVALUADA">Evaluada</option>
+          <option value="PENDIENTE">Pendiente</option>
+          <option value="CANCELADA">Cancelada</option>
+          <option value="VENCIDA">Vencida</option>
+        </select></div>
+      </div>
+      <div class="field" style="flex:1;min-width:130px;">
+        <label>Desde</label>
+        <input type="date" id="conc-desde">
+      </div>
+      <div class="field" style="flex:1;min-width:130px;">
+        <label>Hasta</label>
+        <input type="date" id="conc-hasta">
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="conciliacionCargar()" style="background:var(--blue);color:#fff;padding:9px 18px;border-radius:9px;border:none;font-weight:700;font-size:13px;cursor:pointer;">🔍 Buscar</button>
+        <button onclick="concDescarga()" style="background:#2E9E6B;color:#fff;padding:9px 16px;border-radius:9px;border:none;font-weight:700;font-size:13px;cursor:pointer;">⬇️ Descargar</button>
+      </div>
+    </div>
+    <div id="conc-resumen" style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;"></div>
+    <div id="conc-tabla"><div style="text-align:center;padding:40px;color:var(--grey-txt);">Selecciona filtros y da clic en Buscar.</div></div>
+  </div>
+</div>
+</div><!-- end mod5 -->
+
+<!-- MOD6: HISTORIAL INVENTARIOS -->
+<div class="module" id="mod6">
+<div class="wrap">
+  <div class="card">
+    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--blue);margin-bottom:4px;">Inventarios</p>
+    <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:16px;">Historial de Inventarios</h2>
+    <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap;">
+      <button onclick="histTab('all')" id="htab-all" style="padding:7px 16px;border-radius:20px;border:1.5px solid var(--blue);background:var(--blue);color:#fff;font-weight:700;font-size:12px;cursor:pointer;">Todos</button>
+      <button onclick="histTab('ac')" id="htab-ac" style="padding:7px 16px;border-radius:20px;border:1.5px solid var(--grey-mid);background:#fff;color:var(--grey-txt);font-size:12px;cursor:pointer;">Ávila Camacho</button>
+      <button onclick="histTab('pj')" id="htab-pj" style="padding:7px 16px;border-radius:20px;border:1.5px solid var(--grey-mid);background:#fff;color:var(--grey-txt);font-size:12px;cursor:pointer;">Paseo Jardines</button>
+      <button onclick="histTab('po')" id="htab-po" style="padding:7px 16px;border-radius:20px;border:1.5px solid var(--grey-mid);background:#fff;color:var(--grey-txt);font-size:12px;cursor:pointer;">Postrería</button>
+    </div>
+    <div id="hist-loading" style="display:none;text-align:center;padding:30px;color:var(--grey-txt);">Cargando historial...</div>
+    <div id="hist-list"></div>
+  </div>
+</div>
+</div><!-- end mod6 -->
+
+<!-- MOD7: HISTORIAL SDP -->
+<div class="module" id="mod7">
+<div class="wrap">
+  <div class="card">
+    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--blue);margin-bottom:4px;">Pedidos</p>
+    <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:16px;">Historial SDP</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end;">
+      <div class="field" style="flex:1;min-width:150px;">
+        <label>Sucursal</label>
+        <div class="sel-wrap"><select id="hsdp-suc">
+          <option value="">Todas</option>
+          <option value="ÁVILA CAMACHO">Ávila Camacho</option>
+          <option value="PASEO JARDINES">Paseo Jardines</option>
+          <option value="POSTRERÍA">Postrería</option>
+          <option value="CDP">Calidad y Desarrollo</option>
+        </select></div>
+      </div>
+      <div class="field" style="flex:1;min-width:130px;">
+        <label>Estado</label>
+        <div class="sel-wrap"><select id="hsdp-estado">
+          <option value="">Todos</option>
+          <option value="EVALUADA">Evaluada</option>
+          <option value="PENDIENTE">Pendiente</option>
+          <option value="CANCELADA">Cancelada</option>
+          <option value="VENCIDA">Vencida</option>
+        </select></div>
+      </div>
+      <div class="field" style="flex:1;min-width:130px;">
+        <label>Desde</label>
+        <input type="date" id="hsdp-desde">
+      </div>
+      <div class="field" style="flex:1;min-width:130px;">
+        <label>Hasta</label>
+        <input type="date" id="hsdp-hasta">
+      </div>
+      <button onclick="histSdpCargar()" style="background:var(--blue);color:#fff;padding:9px 18px;border-radius:9px;border:none;font-weight:700;font-size:13px;cursor:pointer;">🔍 Buscar</button>
+    </div>
+    <div id="hsdp-loading" style="display:none;text-align:center;padding:30px;color:var(--grey-txt);">Cargando...</div>
+    <div id="hsdp-lista"></div>
+  </div>
+</div>
+</div><!-- end mod7 -->
+
+<!-- MOD8: PROMEDIOS -->
+<div class="module" id="mod8">
+<div class="wrap">
+  <div class="card">
+    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--blue);margin-bottom:4px;">Análisis</p>
+    <h2 style="font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.05em;color:var(--dark);margin-bottom:16px;">Promedios de Solicitud por Insumo</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;margin-bottom:14px;">
+      <div class="field">
+        <label>Sucursal</label>
+        <div class="sel-wrap"><select id="prom-suc">
+          <option value="">Todas</option>
+          <option value="ÁVILA CAMACHO">Ávila Camacho</option>
+          <option value="PASEO JARDINES">Paseo Jardines</option>
+          <option value="POSTRERÍA">Postrería</option>
+          <option value="CDP">Calidad y Desarrollo</option>
+        </select></div>
+      </div>
+      <div class="field">
+        <label>Desde</label>
+        <input type="date" id="prom-desde">
+      </div>
+      <div class="field">
+        <label>Hasta</label>
+        <input type="date" id="prom-hasta">
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="promCargar()" style="background:var(--blue);color:#fff;border:none;border-radius:9px;padding:10px 18px;font-weight:700;cursor:pointer;">🔍 Analizar</button>
+        <button onclick="promDescargar()" id="btn-prom-dl" style="background:#2E9E6B;color:#fff;border:none;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer;">⬇️ PDF</button>
+      </div>
+    </div>
+    <div id="prom-loading" style="display:none;text-align:center;padding:30px;color:var(--grey-txt);">Analizando datos...</div>
+    <div id="prom-resultado"></div>
+  </div>
+</div>
+</div><!-- end mod8 -->
+
+
 
 <script>
 

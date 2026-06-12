@@ -2640,6 +2640,8 @@ function aplicarRol(){
 
   var btnTrans = document.getElementById('btn-transferencias');
   if(btnTrans) btnTrans.style.display = 'block'; // visible for all roles
+  var _btnRep=document.getElementById('btn-reporte');
+  if(_btnRep) _btnRep.style.display=(rol==='admin')?'inline-block':'none';
   // Admin tiene acceso universal a todas las pestanas
   var _mod8=document.getElementById('mod8'),_ntab8=document.getElementById('ntab8');
   if(_mod8) _mod8.style.display=(rol==='admin')?'block':'none';

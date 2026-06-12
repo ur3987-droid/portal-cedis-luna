@@ -1858,11 +1858,10 @@ function showMod(n){
     if(modEl) modEl.classList.add('active');
     if(tabEl) tabEl.classList.add('active');
     window.scrollTo({top:0,behavior:'smooth'});
-    if(n===4) histCargar();
+    if(n===6) histCargar();
     if(n===5) conciliacionCargar();
     if(n===7) histSdpCargar();
-  if(n===8) promCargar();
-    espejoPublicar('Módulo '+n,'abierto',{});
+    if(n===8) promCargar();
     var btnTr=document.getElementById('btn-transferencias');
     if(btnTr) btnTr.style.display='block';
   } catch(ex){ console.error('showMod error:',ex); }

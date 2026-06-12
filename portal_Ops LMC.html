@@ -3495,20 +3495,14 @@ function verPdfSDP(btn){
 function generarReporte(){
   var btn = document.getElementById('btn-reporte');
   if(btn){ btn.disabled=true; btn.textContent='⏳ Generando...'; }
-  fetch(SCRIPT_URL + '?tipo=reporte_ejecutivo')
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      if(d && d.url){
-        window.open(d.url, '_blank');
-        alert('✅ Reporte generado exitosamente. Se abrirá en una nueva pestaña.');
-      } else {
-        alert('Error al generar reporte: ' + (d ? d.msg : 'sin respuesta'));
-      }
-    })
-    .catch(function(err){ alert('Error: ' + err); })
-    .finally(function(){
-      if(btn){ btn.disabled=false; btn.textContent='📊 Reporte Ejecutivo'; }
-    });
+  iframePost(SCRIPT_URL, {tipo:'reporte_ejecutivo'}, function(d){
+    if(btn){ btn.disabled=false; btn.textContent='📊 Reporte Ejecutivo'; }
+    if(d && d.url){
+      window.open(d.url, '_blank');
+    } else {
+      alert('Error: ' + (d ? (d.msg||JSON.stringify(d)) : 'sin respuesta'));
+    }
+  });
 }
 
 function concDescarga(){

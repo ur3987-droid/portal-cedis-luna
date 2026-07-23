@@ -1613,7 +1613,6 @@ function showMod(n){
     if(n===5) conciliacionCargar();
     if(n===7) histSdpCargar();
   if(n===8) promCargar();
-    espejoPublicar('Módulo '+n,'abierto',{});
     var btnTr=document.getElementById('btn-transferencias');
     if(btnTr) btnTr.style.display='block';
   } catch(ex){ console.error('showMod error:',ex); }
